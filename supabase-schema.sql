@@ -31,24 +31,30 @@ CREATE TABLE IF NOT EXISTS contractor_log (
   last_rams_review_date   TEXT,
   last_induction_date     TEXT,
   last_compliance_date    TEXT,
+  amended_by              TEXT,
+  amended_at              TEXT,
   created_at              TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ── 2. engineer_overtime ──────────────────────────────────
 CREATE TABLE IF NOT EXISTS engineer_overtime (
-  id                  BIGSERIAL PRIMARY KEY,
-  engineer_name       TEXT,
-  start_timestamp     TEXT,
-  end_timestamp       TEXT,
-  work_description    TEXT,
-  image_path          TEXT,
-  status              TEXT,
-  approval_status     TEXT,
-  approved_by         TEXT,
-  approval_timestamp  TEXT,
-  notes               TEXT,
-  adjusted_duration   TEXT,
-  created_at          TIMESTAMPTZ DEFAULT NOW()
+  id                        BIGSERIAL PRIMARY KEY,
+  engineer_name             TEXT,
+  start_timestamp           TEXT,
+  end_timestamp             TEXT,
+  work_description          TEXT,
+  image_path                TEXT,
+  status                    TEXT,
+  approval_status           TEXT,
+  approved_by               TEXT,
+  approval_timestamp        TEXT,
+  notes                     TEXT,
+  adjusted_duration         TEXT,
+  approved_by_dean          TEXT,
+  approved_by_laurel        TEXT,
+  dean_approval_timestamp   TEXT,
+  laurel_approval_timestamp TEXT,
+  created_at                TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ── 3. managers ────────────────────────────────────────────
@@ -73,19 +79,46 @@ CREATE TABLE IF NOT EXISTS contractor_compliance (
   updated_at        TEXT
 );
 
--- ── 5. Disable RLS (internal app — all ops via server-side API) ──
+-- ── 5. operative_induction (per-person, not per-company) ──
+CREATE TABLE IF NOT EXISTS operative_induction (
+  id               BIGSERIAL PRIMARY KEY,
+  operative_name   TEXT NOT NULL,
+  company_name     TEXT,
+  induction_date   TEXT,
+  induction_expiry TEXT,
+  updated_at       TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS operative_induction_name_idx
+  ON operative_induction (lower(trim(operative_name)));
+
+-- ── 6. Disable RLS (internal app — all ops via server-side API) ──
 ALTER TABLE contractor_log         DISABLE ROW LEVEL SECURITY;
 ALTER TABLE engineer_overtime      DISABLE ROW LEVEL SECURITY;
 ALTER TABLE managers               DISABLE ROW LEVEL SECURITY;
 ALTER TABLE contractor_compliance  DISABLE ROW LEVEL SECURITY;
+ALTER TABLE operative_induction    DISABLE ROW LEVEL SECURITY;
 
--- ── 6. Storage bucket for compliance documents ────────────
--- Run this too — creates a private bucket for uploaded docs
+-- ── 7. Storage bucket for compliance documents ────────────
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('compliance-docs', 'compliance-docs', false)
 ON CONFLICT (id) DO NOTHING;
 
--- Allow all operations on compliance-docs from the service role
--- (the anon key is used server-side only, so this is safe)
 CREATE POLICY "allow all compliance-docs" ON storage.objects
   FOR ALL USING (bucket_id = 'compliance-docs');
+
+-- ============================================================
+-- MIGRATION — run against existing database
+-- Safe to run multiple times (IF NOT EXISTS / IF NOT EXISTS guard)
+-- ============================================================
+
+-- contractor_log: amend tracking columns
+ALTER TABLE contractor_log ADD COLUMN IF NOT EXISTS amended_by TEXT;
+ALTER TABLE contractor_log ADD COLUMN IF NOT EXISTS amended_at TEXT;
+
+-- engineer_overtime: dual approval columns
+ALTER TABLE engineer_overtime ADD COLUMN IF NOT EXISTS approved_by_dean          TEXT;
+ALTER TABLE engineer_overtime ADD COLUMN IF NOT EXISTS approved_by_laurel        TEXT;
+ALTER TABLE engineer_overtime ADD COLUMN IF NOT EXISTS dean_approval_timestamp   TEXT;
+ALTER TABLE engineer_overtime ADD COLUMN IF NOT EXISTS laurel_approval_timestamp TEXT;
+
+-- operative_induction table (idempotent via CREATE TABLE IF NOT EXISTS above)

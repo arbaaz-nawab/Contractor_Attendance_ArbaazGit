@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 
-// Options are alphabetical with "Other" always last
 const BUILDINGS = [
   'Goodenough Hotel',
   'House 15',
   'London House',
+  'The Georgian House',
   'William Goodenough House',
   'Other',
 ];
@@ -51,8 +51,6 @@ const BLANK = {
   operativeName: '',
   contactNumber: '',
   idNumber:      '',
-  rams:          '',
-  ramsOther:     '',
   declaration:   false,
 };
 
@@ -69,14 +67,21 @@ const BLANK_HS = {
 };
 
 export default function SignInForm() {
-  const [f, setF]           = useState(BLANK);
+  const [f, setF]             = useState(BLANK);
   const [loading, setLoading] = useState(false);
   const [result, setResult]   = useState(null);
 
   // H&S state
-  const [hs, setHs]                       = useState(BLANK_HS);
-  const [contractorLookup, setLookup]     = useState(null); // null = not yet looked up
-  const [lookingUp, setLookingUp]         = useState(false);
+  const [hs, setHs]                   = useState(BLANK_HS);
+  const [contractorLookup, setLookup] = useState(null);
+  const [lookingUp, setLookingUp]     = useState(false);
+
+  // Operative-level induction lookup + name suggestions
+  const [operativeLookup, setOpLookup]         = useState(null);
+  const [nameSuggestions, setNameSuggestions]  = useState([]);
+
+  // Duplicate ID pre-check
+  const [idConflict, setIdConflict] = useState(null);
 
   function set(key, value) {
     setF((prev) => ({ ...prev, [key]: value }));
@@ -114,13 +119,12 @@ export default function SignInForm() {
       const data = await res.json();
       setLookup(data);
     } catch {
-      setLookup({ contractorType: 'FIRST_TIME' }); // safe default on network error
+      setLookup({ contractorType: 'FIRST_TIME' });
     } finally {
       setLookingUp(false);
     }
   }, []);
 
-  // Trigger immediately when a known company is selected from dropdown
   function handleCompanyChange(e) {
     set('company', e.target.value);
     if (e.target.value && e.target.value !== 'Other') {
@@ -130,20 +134,67 @@ export default function SignInForm() {
     }
   }
 
-  // Debounced lookup for "Other" free-text company
   useEffect(() => {
     if (f.company !== 'Other' || !f.companyOther.trim()) return;
     const timer = setTimeout(() => doLookup(f.companyOther.trim()), 600);
     return () => clearTimeout(timer);
   }, [f.company, f.companyOther, doLookup]);
 
+  // ── Operative name: suggestions + induction lookup ───────────────────────────
+  useEffect(() => {
+    const name = f.operativeName.trim();
+    if (name.length < 2) {
+      setNameSuggestions([]);
+      setOpLookup(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const [sugRes, lookupRes] = await Promise.all([
+          fetch(`/api/operative-lookup?partial=${encodeURIComponent(name)}`),
+          fetch(`/api/operative-lookup?name=${encodeURIComponent(name)}`),
+        ]);
+        if (cancelled) return;
+        const [sugData, lookupData] = await Promise.all([sugRes.json(), lookupRes.json()]);
+        if (cancelled) return;
+        if (sugData.names) setNameSuggestions(sugData.names);
+        setOpLookup(lookupData);
+      } catch { /* ignore */ }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [f.operativeName]);
+
+  // ── Duplicate ID pre-check on blur ───────────────────────────────────────────
+  async function handleIdBlur() {
+    if (!/^\d{3}$/.test(f.idNumber)) { setIdConflict(null); return; }
+    try {
+      const res  = await fetch(`/api/active-check?id=${encodeURIComponent(f.idNumber)}`);
+      const data = await res.json();
+      setIdConflict(data.active
+        ? `ID ${f.idNumber} is already signed in today. Please sign out first.`
+        : null);
+    } catch {
+      setIdConflict(null);
+    }
+  }
+
   // ── Compliance expiry logic ───────────────────────────────────────────────────
-  const isFirstTime   = contractorLookup?.contractorType === 'FIRST_TIME';
-  const anyExpired    = contractorLookup?.ramsExpired || contractorLookup?.inductionExpired || contractorLookup?.complianceExpired;
-  const showConditional = contractorLookup && (isFirstTime || anyExpired);
+  const isFirstTime = contractorLookup?.contractorType === 'FIRST_TIME';
+
+  // Use operative-level induction if available, fall back to company-level
+  const inductionExpired    = operativeLookup?.inductionExpired    ?? contractorLookup?.inductionExpired;
+  const lastInductionDate   = operativeLookup?.lastInductionDate   || contractorLookup?.lastInductionDate;
+  const inductionExpiry     = operativeLookup?.inductionExpiry     || contractorLookup?.inductionExpiry;
+
+  const anyExpired = contractorLookup?.ramsExpired || inductionExpired || contractorLookup?.complianceExpired;
+
+  // RAMS and Induction shown whenever lookup has run; Insurance only on first visit / expired
+  const showInsurance = !!(contractorLookup && (isFirstTime || contractorLookup.complianceExpired));
 
   // ── Validation ────────────────────────────────────────────────────────────────
   function validate() {
+    if (idConflict) return idConflict;
     if (f.buildings.length === 0)
       return 'Please select at least one building.';
     if (f.buildings.includes('Other') && !f.buildingOther.trim())
@@ -174,10 +225,7 @@ export default function SignInForm() {
     }
     if (!/^\d{3}$/.test(f.idNumber))
       return 'Contractor unique ID must be exactly three digits (e.g. 001).';
-    {/*if (!f.rams)
-      return 'Please answer the RAMS question.';*/}
 
-    // H&S validation (only if lookup has run)
     if (contractorLookup) {
       if (!hs.fireSafetyAffected)
         return 'Please indicate whether your work will affect fire safety systems.';
@@ -185,11 +233,11 @@ export default function SignInForm() {
         return 'Please confirm you have checked the asbestos register.';
       if (hs.asbestosChecked === 'No')
         return 'You must check the asbestos register for your work area before signing in.';
-      if (showConditional && !hs.ramsApproved)
+      if (!hs.ramsApproved)
         return 'Please confirm RAMS approval status.';
-      if (showConditional && !hs.inductionComplete)
+      if (!hs.inductionComplete)
         return 'Please confirm whether site induction has been completed.';
-      if (showConditional && !hs.insuranceValid)
+      if (showInsurance && !hs.insuranceValid)
         return 'Please confirm insurance validity.';
     }
 
@@ -208,7 +256,6 @@ export default function SignInForm() {
     const buildingList   = f.buildings.map((b) => b === 'Other' ? f.buildingOther.trim() : b).join(', ');
     const contactDisplay = f.contact === 'Other' ? f.contactOther.trim() : f.contact;
     const companyDisplay = f.company === 'Other' ? f.companyOther.trim() : f.company;
-    const ramsDisplay    = f.rams === 'Other' ? `Other – ${f.ramsOther.trim()}` : f.rams;
 
     const permitTypesDisplay = hs.permitTypes
       .map((pt) => pt === 'Other' ? (hs.permitOther.trim() || 'Other') : pt)
@@ -228,19 +275,14 @@ export default function SignInForm() {
           buildings:            buildingList,
           pointOfContact:       contactDisplay,
           contactNumber:        f.contactNumber.trim(),
-          ramsSubmitted:        ramsDisplay,
+          ramsSubmitted:        '',
           declarationConfirmed: 'Yes',
-          // New H&S fields
           contractorType:       contractorLookup?.contractorType || '',
           permitRequired:       hs.permitTypes.length > 0 ? 'Yes' : 'No',
           permitTypes:          permitTypesDisplay,
-          fireSafetyAffected:   hs.fireSafetyAffected
-            ? hs.fireSafetyAffected + (
-                hs.fireSafetyAffected === 'Yes'
-                  ? ` (Alarm isolation: ${hs.fireAlarmIsolation || 'N/A'}, Fire watch: ${hs.fireWatch || 'N/A'})`
-                  : ''
-              )
-            : '',
+          fireSafetyAffected:   hs.fireSafetyAffected === 'Yes'
+            ? `Yes (Alarm isolation: ${hs.fireAlarmIsolation || 'N/A'}, Fire watch: ${hs.fireWatch || 'N/A'})`
+            : (hs.fireSafetyAffected || ''),
           asbestosChecked:      hs.asbestosChecked,
           ramsApproved:         hs.ramsApproved || '',
           inductionComplete:    hs.inductionComplete || '',
@@ -257,6 +299,9 @@ export default function SignInForm() {
         setF(BLANK);
         setHs(BLANK_HS);
         setLookup(null);
+        setOpLookup(null);
+        setIdConflict(null);
+        setNameSuggestions([]);
       } else {
         setResult({ type: 'error', message: data.message });
       }
@@ -306,17 +351,21 @@ export default function SignInForm() {
           )}
         </div>
 
-        {/* Operative name */}
+        {/* Operative name with autocomplete */}
         <div className="form-group">
           <label htmlFor="operativeName">Operative's full name *</label>
           <input
             id="operativeName"
             type="text"
+            list="operative-suggestions"
             value={f.operativeName}
             onChange={(e) => set('operativeName', e.target.value)}
             placeholder="e.g. John Smith"
-            autoComplete="name"
+            autoComplete="off"
           />
+          <datalist id="operative-suggestions">
+            {nameSuggestions.map((name) => <option key={name} value={name} />)}
+          </datalist>
         </div>
 
         {/* Contact number */}
@@ -343,11 +392,17 @@ export default function SignInForm() {
             type="text"
             inputMode="numeric"
             value={f.idNumber}
-            onChange={(e) => set('idNumber', e.target.value.replace(/\D/g, '').slice(0, 3))}
+            onChange={(e) => { set('idNumber', e.target.value.replace(/\D/g, '').slice(0, 3)); setIdConflict(null); }}
+            onBlur={handleIdBlur}
             placeholder="e.g. 001"
             maxLength={3}
             style={{ maxWidth: 120 }}
           />
+          {idConflict && (
+            <div className="alert alert--error" style={{ marginTop: 8 }}>
+              {idConflict}
+            </div>
+          )}
         </div>
       </div>
 
@@ -407,7 +462,7 @@ export default function SignInForm() {
         <div className="card">
           <p className="card__title">Health &amp; Safety Checks</p>
 
-          {/* Compliance expiry warning — prominent banner */}
+          {/* Compliance expiry warning banner */}
           {anyExpired && (
             <div className="alert alert--error" style={{ marginBottom: 16 }}>
               <strong>Compliance Expired</strong> — the following must be re-confirmed before proceeding:
@@ -421,13 +476,11 @@ export default function SignInForm() {
                     {contractorLookup.ramsExpiry ? ` (expired ${contractorLookup.ramsExpiry})` : ''}
                   </li>
                 )}
-                {contractorLookup.inductionExpired && (
+                {inductionExpired && (
                   <li>
                     Site Induction
-                    {contractorLookup.lastInductionDate
-                      ? ` — last confirmed ${contractorLookup.lastInductionDate}`
-                      : ' — never recorded'}
-                    {contractorLookup.inductionExpiry ? ` (expired ${contractorLookup.inductionExpiry})` : ''}
+                    {lastInductionDate ? ` — last confirmed ${lastInductionDate}` : ' — never recorded'}
+                    {inductionExpiry ? ` (expired ${inductionExpiry})` : ''}
                   </li>
                 )}
                 {contractorLookup.complianceExpired && (
@@ -480,6 +533,7 @@ export default function SignInForm() {
               <option value="">— Select —</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
+              <option value="Not Applicable">Not Applicable</option>
             </select>
 
             {hs.fireSafetyAffected === 'Yes' && (
@@ -530,105 +584,72 @@ export default function SignInForm() {
             )}
           </div>
 
-          {/* Q4–Q6 — Conditional: first-time or any compliance expired */}
-          {showConditional && (
-            <>
-              {isFirstTime && (
-                <div className="alert alert--info" style={{ marginBottom: 12 }}>
-                  First visit — please answer all compliance questions below.
-                </div>
+          {/* Q4 — RAMS approved (always shown) */}
+          <div className="form-group">
+            <label htmlFor="ramsApproved">RAMS submitted and approved? *</label>
+            <select
+              id="ramsApproved"
+              value={hs.ramsApproved}
+              onChange={(e) => setH('ramsApproved', e.target.value)}
+            >
+              <option value="">— Select —</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+              <option value="Not Applicable">Not Applicable</option>
+            </select>
+            {hs.ramsApproved === 'No' && (
+              <p className="text-sm" style={{ color: '#b45309', marginTop: 4 }}>
+                Warning: RAMS not submitted. You may not proceed on site without approved RAMS.
+              </p>
+            )}
+          </div>
+
+          {/* Q5 — Site induction (always shown; uses operative-level expiry) */}
+          <div className="form-group">
+            <label htmlFor="inductionComplete">Site induction completed? *</label>
+            <select
+              id="inductionComplete"
+              value={hs.inductionComplete}
+              onChange={(e) => setH('inductionComplete', e.target.value)}
+            >
+              <option value="">— Select —</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+              <option value="Not Applicable">Not Applicable</option>
+            </select>
+            {hs.inductionComplete === 'No' && (
+              <p className="text-sm" style={{ color: '#b45309', marginTop: 4 }}>
+                Warning: site induction not complete. You must not proceed.
+              </p>
+            )}
+          </div>
+
+          {/* Q6 — Insurance (first visit or expired only) */}
+          {showInsurance && (
+            <div className="form-group">
+              <label htmlFor="insuranceValid">Insurance valid? *</label>
+              <select
+                id="insuranceValid"
+                value={hs.insuranceValid}
+                onChange={(e) => setH('insuranceValid', e.target.value)}
+              >
+                <option value="">— Select —</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+                <option value="Not Applicable">Not Applicable</option>
+              </select>
+              {hs.insuranceValid === 'No' && (
+                <p className="text-sm" style={{ color: '#b45309', marginTop: 4 }}>
+                  Warning: insurance not confirmed. You must not proceed.
+                </p>
               )}
-              {!isFirstTime && anyExpired && (
-                <div className="alert alert--info" style={{ marginBottom: 12 }}>
-                  Some compliance has expired — please re-confirm below.
-                  {contractorLookup.ramsExpired && <> RAMS expired.</>}
-                  {contractorLookup.inductionExpired && <> Induction expired.</>}
-                  {contractorLookup.complianceExpired && <> Insurance expired.</>}
-                </div>
-              )}
-
-              {/* Q4 — RAMS approved */}
-              <div className="form-group">
-                <label htmlFor="ramsApproved">RAMS submitted and approved? *</label>
-                <select
-                  id="ramsApproved"
-                  value={hs.ramsApproved}
-                  onChange={(e) => setH('ramsApproved', e.target.value)}
-                >
-                  <option value="">— Select —</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              {/* Q5 — Site induction */}
-              <div className="form-group">
-                <label htmlFor="inductionComplete">Site induction completed? *</label>
-                <select
-                  id="inductionComplete"
-                  value={hs.inductionComplete}
-                  onChange={(e) => setH('inductionComplete', e.target.value)}
-                >
-                  <option value="">— Select —</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-                {hs.inductionComplete === 'No' && (
-                  <p className="text-sm" style={{ color: '#b45309', marginTop: 4 }}>
-                    Warning: site induction not complete. You must not proceed.
-                  </p>
-                )}
-              </div>
-
-              {/* Q6 — Insurance */}
-              <div className="form-group">
-                <label htmlFor="insuranceValid">Insurance valid? *</label>
-                <select
-                  id="insuranceValid"
-                  value={hs.insuranceValid}
-                  onChange={(e) => setH('insuranceValid', e.target.value)}
-                >
-                  <option value="">— Select —</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-                {hs.insuranceValid === 'No' && (
-                  <p className="text-sm" style={{ color: '#b45309', marginTop: 4 }}>
-                    Warning: insurance not confirmed. You must not proceed.
-                  </p>
-                )}
-              </div>
-            </>
+            </div>
           )}
         </div>
       )}
 
       <div className="card">
         <p className="card__title">Declaration</p>
-
-        {/* RAMS */}
-        {/*<div className="form-group">
-          <label htmlFor="rams">Have you signed and submitted your RAMS? *</label>
-          <select id="rams" value={f.rams} onChange={(e) => set('rams', e.target.value)}>
-            <option value="">— Select —</option>
-            <option value="No">No</option>
-            <option value="Yes">Yes</option>
-            <option value="Other">Other</option>
-          </select>
-          {f.rams === 'Other' && (
-            <textarea
-              className="mt-2"
-              rows={3}
-              value={f.ramsOther ?? ''}
-              onChange={(e) => set('ramsOther', e.target.value)}
-              placeholder="Please provide details…"
-              style={{ resize: 'vertical' }}
-            />
-          )}
-        </div>*/}
-
-        {/* Declaration */}
         <div className="form-group">
           <label style={{ marginBottom: 8 }}>Declaration *</label>
           <label className="checkbox-label checkbox-label--declaration">

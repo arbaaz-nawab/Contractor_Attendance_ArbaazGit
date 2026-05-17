@@ -54,7 +54,7 @@ Go to the **main page** (`/`) and tap **Goodenough College Staff**.
 ### 3. Manager (Dashboard)
 Go to `/dashboard` (there is a small link at the bottom of the main page).
 
-Enter the **dashboard PIN** (default: `1234` — change this in Vercel env vars).
+Enter the **dashboard PIN** (default: `4321` — change this in Vercel env vars).
 
 **Dashboard tabs:**
 
@@ -128,7 +128,7 @@ This creates four tables and a private storage bucket:
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://caiyqhnbztxbnobmdapj.supabase.co` |
 | `SUPABASE_ANON_KEY` | *(your anon key — see .env.local)* |
 | `DASHBOARD_PIN` | `1234` (or choose your own) |
-| `MANAGER_PINS` | `Arbaaz Nawab:9999,Dean Marsh:1212,Frankie Sheekey:7777,Laurel Anderson:6666` |
+| `MANAGER_PINS` | `Arbaaz Nawab:9999,Dean Marsh:1212,Frankie Sheekey:7777,Laurel Anderson:6666,Sarfraz Arfan:5555` |
 | `NEXT_PUBLIC_APP_TITLE` | `Estates Contractor Log` |
 | `CF_ACCOUNT_ID` | *(only if using Cloudflare R2 for photos — optional)* |
 | `CF_R2_ACCESS_KEY_ID` | *(optional)* |

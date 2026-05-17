@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from '../components/Layout';
 import Link from 'next/link';
-import { MANAGERS, ENGINEER_MANAGER_MAP } from '../lib/config';
+import { MANAGERS } from '../lib/config';
 
 // Format datetime for display: "09:30"
 function fmtTime(dt) {
@@ -40,9 +40,26 @@ function formatHours(decimal) {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+// Parse "Xh Ym" into { h, m } strings
+function parseDurationHM(str) {
+  if (!str || str === '-') return { h: '', m: '' };
+  const hm = str.match(/(\d+)h/);
+  const mm = str.match(/(\d+)m/);
+  return { h: hm ? hm[1] : '', m: mm ? mm[1] : '' };
+}
+
 // Compliance status badge
 function ComplianceBadge({ status }) {
   const color = status === 'Active' ? '#15803d' : status === 'Expired' ? '#b91c1c' : '#b45309';
+  return <span style={{ fontSize: '0.8rem', fontWeight: 600, color }}>{status}</span>;
+}
+
+// Approval status badge
+function ApprovalBadge({ status }) {
+  const color = status === 'FULLY APPROVED' ? '#15803d'
+              : status === 'PARTIALLY APPROVED' ? '#b45309'
+              : status === 'REJECTED' ? '#b91c1c'
+              : '#92400e';
   return <span style={{ fontSize: '0.8rem', fontWeight: 600, color }}>{status}</span>;
 }
 
@@ -51,9 +68,9 @@ function ComplianceFilesModal({ companyName, onClose }) {
   const [files,       setFiles]       = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState('');
-  const [preview,     setPreview]     = useState(null);   // { name, serveUrl, isPdf }
-  const [deleting,    setDeleting]    = useState('');     // filename currently being deleted
-  const [replaceFor,  setReplaceFor]  = useState('');     // filename being replaced
+  const [preview,     setPreview]     = useState(null);
+  const [deleting,    setDeleting]    = useState('');
+  const [replaceFor,  setReplaceFor]  = useState('');
   const [uploading,   setUploading]   = useState(false);
   const replaceInputRef = useRef();
 
@@ -72,7 +89,6 @@ function ComplianceFilesModal({ companyName, onClose }) {
 
   useEffect(() => { loadFiles(); }, [companyName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Strip the timestamp prefix (e.g. "1712345678_") for display
   function displayName(name) {
     return name.replace(/^\d+_/, '');
   }
@@ -105,7 +121,6 @@ function ComplianceFilesModal({ companyName, onClose }) {
     setUploading(true);
     setError('');
     try {
-      // 1. Upload the new file first
       const fd = new FormData();
       fd.append('companyName', companyName);
       fd.append('document', newFile);
@@ -113,7 +128,6 @@ function ComplianceFilesModal({ companyName, onClose }) {
       const upData = await upRes.json();
       if (!upData.success) { setError(upData.message || 'Upload failed.'); return; }
 
-      // 2. Delete the old file
       await fetch(
         `/api/compliance-files?company=${encodeURIComponent(companyName)}&file=${encodeURIComponent(oldFilename)}`,
         { method: 'DELETE' }
@@ -141,7 +155,6 @@ function ComplianceFilesModal({ companyName, onClose }) {
         maxHeight: '90vh', overflow: 'hidden',
         display: 'flex', flexDirection: 'column', margin: 0,
       }}>
-        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <p className="card__title" style={{ margin: 0 }}>
             Documents — {companyName}
@@ -163,12 +176,10 @@ function ComplianceFilesModal({ companyName, onClose }) {
           </button>
         </div>
 
-        {/* Body */}
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {loading && <p className="text-muted text-sm">Loading files…</p>}
           {error   && <div className="alert alert--error">{error}</div>}
 
-          {/* ── File list ── */}
           {!preview && files && files.length === 0 && (
             <p className="text-muted text-sm">No documents uploaded yet for this company.</p>
           )}
@@ -180,12 +191,9 @@ function ComplianceFilesModal({ companyName, onClose }) {
                   padding: '10px 12px', border: '1px solid var(--border)',
                   borderRadius: 6, background: 'var(--bg)',
                 }}>
-                  {/* File name row */}
                   <div style={{ fontSize: '0.875rem', wordBreak: 'break-all', marginBottom: 8 }}>
                     {f.isPdf ? '📄' : '🖼️'} <strong>{displayName(f.name)}</strong>
                   </div>
-
-                  {/* Action buttons */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <button className="btn btn--primary btn--sm" onClick={() => setPreview(f)}>
                       Preview
@@ -209,8 +217,6 @@ function ComplianceFilesModal({ companyName, onClose }) {
                       {deleting === f.name ? 'Deleting…' : 'Delete'}
                     </button>
                   </div>
-
-                  {/* Inline replace picker — shown only for this row */}
                   {replaceFor === f.name && (
                     <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
                       <input
@@ -232,7 +238,6 @@ function ComplianceFilesModal({ companyName, onClose }) {
             </div>
           )}
 
-          {/* ── Preview pane ── */}
           {preview && (
             <div style={{ width: '100%' }}>
               {preview.isPdf ? (
@@ -308,21 +313,332 @@ function PinGate({ onUnlock }) {
   );
 }
 
+// ── Amend contractor record modal ─────────────────────────────────────────────
+function AmendModal({ record, onConfirm, onCancel }) {
+  const [managerName, setManagerName] = useState('');
+  const [pin,         setPin]         = useState('');
+  const [fields, setFields] = useState({
+    workCompleted:  record.notes          || '',
+    signOutTime:    record.signOutTime    || '',
+    contactNumber:  record.contactNumber  || '',
+    buildings:      record.buildings      || '',
+    pointOfContact: record.pointOfContact || '',
+  });
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [error,      setError]      = useState('');
+  const [loading,    setLoading]    = useState(false);
+
+  function setF(key, val) { setFields((p) => ({ ...p, [key]: val })); }
+
+  function pinValid() {
+    if (!managerName) { setError('Please select your manager name.'); return false; }
+    if (!pin)         { setError('Please enter your PIN.'); return false; }
+    return true;
+  }
+
+  async function callApi(body) {
+    setLoading(true); setError('');
+    try {
+      const res  = await fetch('/api/amend-contractor', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rowId: record._row, managerName, pin, ...body }),
+      });
+      const data = await res.json();
+      if (data.success) onConfirm(data.message);
+      else { setError(data.message || 'Failed. Please try again.'); setPin(''); }
+    } catch { setError('Network error. Please try again.'); }
+    finally { setLoading(false); }
+  }
+
+  function handleSave() {
+    if (!pinValid()) return;
+    callApi({
+      workCompleted:  fields.workCompleted,
+      signOutTime:    fields.signOutTime,
+      contactNumber:  fields.contactNumber,
+      buildings:      fields.buildings,
+      pointOfContact: fields.pointOfContact,
+    });
+  }
+
+  function handleDelete() {
+    if (!pinValid()) return;
+    callApi({ action: 'delete' });
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div className="card" style={{ maxWidth: 480, width: '90%', margin: 0, maxHeight: '90vh', overflowY: 'auto' }}>
+        <p className="card__title">{deleteMode ? 'Delete Record' : 'Amend Record'} — {record.operativeName}</p>
+        <p className="text-sm text-muted" style={{ marginBottom: 12 }}>
+          {record.companyName} · {fmtDate(record.signInTime)}
+        </p>
+
+        {error && <div className="alert alert--error">{error}</div>}
+
+        {!deleteMode && (
+          <>
+            <div className="form-group">
+              <label>Work completed</label>
+              <textarea rows={3} value={fields.workCompleted}
+                onChange={(e) => setF('workCompleted', e.target.value)}
+                style={{ resize: 'vertical' }} />
+            </div>
+            <div className="form-group">
+              <label>Sign-out time <span className="text-muted text-sm">(YYYY-MM-DD HH:mm or leave blank)</span></label>
+              <input type="text" value={fields.signOutTime}
+                onChange={(e) => setF('signOutTime', e.target.value)}
+                placeholder="e.g. 2026-05-17 16:30" />
+            </div>
+            <div className="form-group">
+              <label>Contact number</label>
+              <input type="text" value={fields.contactNumber}
+                onChange={(e) => setF('contactNumber', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Buildings</label>
+              <input type="text" value={fields.buildings}
+                onChange={(e) => setF('buildings', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Point of contact</label>
+              <input type="text" value={fields.pointOfContact}
+                onChange={(e) => setF('pointOfContact', e.target.value)} />
+            </div>
+          </>
+        )}
+
+        {deleteMode && (
+          <div className="alert alert--error" style={{ marginBottom: 12 }}>
+            This will permanently delete this contractor entry. This cannot be undone.
+          </div>
+        )}
+
+        <div className="form-group">
+          <label>Your name (manager) *</label>
+          <select value={managerName} onChange={(e) => setManagerName(e.target.value)}>
+            <option value="">— Select —</option>
+            {MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Manager PIN *</label>
+          <input type="password" inputMode="numeric" value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && (deleteMode ? handleDelete() : handleSave())}
+            placeholder="Enter PIN" maxLength={20} />
+        </div>
+
+        {!deleteMode ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn--primary" onClick={handleSave} disabled={loading}>
+              {loading && <span className="spinner" />}
+              {loading ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button className="btn btn--danger" onClick={() => { setDeleteMode(true); setError(''); }}
+              disabled={loading}>
+              Delete Entry
+            </button>
+            <button className="btn btn--secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn--danger" onClick={handleDelete} disabled={loading}>
+              {loading && <span className="spinner" />}
+              {loading ? 'Deleting…' : 'Confirm Delete'}
+            </button>
+            <button className="btn btn--secondary" onClick={() => { setDeleteMode(false); setError(''); }}
+              disabled={loading}>
+              Back
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Amend engineer overtime modal ─────────────────────────────────────────────
+function AmendOvertimeModal({ record, onConfirm, onCancel }) {
+  const parsed = parseDurationHM(record.adjustedDuration || record.duration || '');
+  const [managerName, setManagerName] = useState('');
+  const [pin,         setPin]         = useState('');
+  const [fields, setFields] = useState({
+    workDescription:  record.workDescription || '',
+    startTimestamp:   (record.startTimestamp || '').replace(' ', 'T').slice(0, 16),
+    endTimestamp:     (record.endTimestamp   || '').replace(' ', 'T').slice(0, 16),
+    adjH:             parsed.h,
+    adjM:             parsed.m,
+    notes:            record.notes || '',
+  });
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [error,      setError]      = useState('');
+  const [loading,    setLoading]    = useState(false);
+
+  function setF(key, val) { setFields((p) => ({ ...p, [key]: val })); }
+
+  function pinValid() {
+    if (!managerName) { setError('Please select your manager name.'); return false; }
+    if (!pin)         { setError('Please enter your PIN.'); return false; }
+    return true;
+  }
+
+  async function callApi(body) {
+    setLoading(true); setError('');
+    try {
+      const res  = await fetch('/api/amend-overtime', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rowId: record._row, managerName, pin, ...body }),
+      });
+      const data = await res.json();
+      if (data.success) onConfirm(data.message);
+      else { setError(data.message || 'Failed. Please try again.'); setPin(''); }
+    } catch { setError('Network error. Please try again.'); }
+    finally { setLoading(false); }
+  }
+
+  function handleSave() {
+    if (!pinValid()) return;
+    const adjDuration = (fields.adjH || fields.adjM)
+      ? `${fields.adjH || 0}h ${String(fields.adjM || 0).padStart(2, '0')}m`
+      : '';
+    callApi({
+      workDescription:  fields.workDescription,
+      startTimestamp:   fields.startTimestamp ? fields.startTimestamp.replace('T', ' ') + ':00' : undefined,
+      endTimestamp:     fields.endTimestamp   ? fields.endTimestamp.replace('T', ' ')   + ':00' : undefined,
+      adjustedDuration: adjDuration,
+      notes:            fields.notes,
+    });
+  }
+
+  function handleDelete() {
+    if (!pinValid()) return;
+    callApi({ action: 'delete' });
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div className="card" style={{ maxWidth: 480, width: '90%', margin: 0, maxHeight: '90vh', overflowY: 'auto' }}>
+        <p className="card__title">{deleteMode ? 'Delete Overtime' : 'Amend Overtime'} — {record.engineerName}</p>
+        <p className="text-sm text-muted" style={{ marginBottom: 12 }}>
+          {fmtDate(record.startTimestamp)} · Recorded: {record.duration}
+        </p>
+
+        {error && <div className="alert alert--error">{error}</div>}
+
+        {!deleteMode && (
+          <>
+            <div className="form-group">
+              <label>Work description</label>
+              <textarea rows={3} value={fields.workDescription}
+                onChange={(e) => setF('workDescription', e.target.value)}
+                style={{ resize: 'vertical' }} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="form-group">
+                <label>Start time</label>
+                <input type="datetime-local" value={fields.startTimestamp}
+                  onChange={(e) => setF('startTimestamp', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>End time</label>
+                <input type="datetime-local" value={fields.endTimestamp}
+                  onChange={(e) => setF('endTimestamp', e.target.value)} />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Adjusted duration</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input type="number" min="0" max="23" value={fields.adjH}
+                    onChange={(e) => setF('adjH', e.target.value)} style={{ width: 64 }} placeholder="0" />
+                  <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>h</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input type="number" min="0" max="59" value={fields.adjM}
+                    onChange={(e) => setF('adjM', e.target.value)} style={{ width: 64 }} placeholder="0" />
+                  <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>m</span>
+                </div>
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Notes</label>
+              <input type="text" value={fields.notes}
+                onChange={(e) => setF('notes', e.target.value)} />
+            </div>
+          </>
+        )}
+
+        {deleteMode && (
+          <div className="alert alert--error" style={{ marginBottom: 12 }}>
+            This will permanently delete this overtime record. This cannot be undone.
+          </div>
+        )}
+
+        <div className="form-group">
+          <label>Your name (manager) *</label>
+          <select value={managerName} onChange={(e) => setManagerName(e.target.value)}>
+            <option value="">— Select —</option>
+            {MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Manager PIN *</label>
+          <input type="password" inputMode="numeric" value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && (deleteMode ? handleDelete() : handleSave())}
+            placeholder="Enter PIN" maxLength={20} />
+        </div>
+
+        {!deleteMode ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn--primary" onClick={handleSave} disabled={loading}>
+              {loading && <span className="spinner" />}
+              {loading ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button className="btn btn--danger" onClick={() => { setDeleteMode(true); setError(''); }}
+              disabled={loading}>
+              Delete Entry
+            </button>
+            <button className="btn btn--secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn--danger" onClick={handleDelete} disabled={loading}>
+              {loading && <span className="spinner" />}
+              {loading ? 'Deleting…' : 'Confirm Delete'}
+            </button>
+            <button className="btn btn--secondary" onClick={() => { setDeleteMode(false); setError(''); }}
+              disabled={loading}>
+              Back
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Approval PIN modal ────────────────────────────────────────────────────────
 function ApprovalModal({ target, action, managerName, onConfirm, onCancel }) {
-  const [pin,              setPin]              = useState('');
-  const [adjustedDuration, setAdjustedDuration] = useState(target.duration || '');
-  const [error, setError]                       = useState('');
-  const [loading, setLoading]                   = useState(false);
+  const parsed = parseDurationHM(target.duration || '');
+  const [adjH,  setAdjH]  = useState(parsed.h);
+  const [adjM,  setAdjM]  = useState(parsed.m);
+  const [pin,   setPin]   = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   async function handleConfirm() {
     if (!pin) { setError('Please enter your PIN.'); return; }
     setLoading(true); setError('');
     try {
+      const adjDuration = (adjH || adjM)
+        ? `${adjH || 0}h ${String(adjM || 0).padStart(2, '0')}m`
+        : '';
       const body = { rowNumber: target._row, action, managerName, pin };
-      if (action === 'APPROVED' && adjustedDuration.trim()) {
-        body.adjustedDuration = adjustedDuration.trim();
-      }
+      if (action === 'APPROVED' && adjDuration) body.adjustedDuration = adjDuration;
       const res  = await fetch('/api/overtime-approve', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -337,7 +653,7 @@ function ApprovalModal({ target, action, managerName, onConfirm, onCancel }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div className="card" style={{ maxWidth: 340, width: '90%', margin: 0 }}>
+      <div className="card" style={{ maxWidth: 360, width: '90%', margin: 0 }}>
         <p className="card__title">Confirm {action === 'APPROVED' ? 'Approval' : 'Rejection'}</p>
         <p className="text-sm text-muted" style={{ marginBottom: 12 }}>
           Engineer: <strong>{target.engineerName}</strong><br />
@@ -346,16 +662,31 @@ function ApprovalModal({ target, action, managerName, onConfirm, onCancel }) {
         </p>
         {action === 'APPROVED' && (
           <div className="form-group">
-            <label htmlFor="adjustedDuration">Duration</label>
-            <input
-              id="adjustedDuration"
-              type="text"
-              value={adjustedDuration}
-              onChange={(e) => setAdjustedDuration(e.target.value)}
-              placeholder="e.g. 2h 30m"
-            />
+            <label>Duration</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input
+                  type="number" min="0" max="23"
+                  value={adjH}
+                  onChange={(e) => setAdjH(e.target.value)}
+                  style={{ width: 64 }}
+                  placeholder="0"
+                />
+                <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>h</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input
+                  type="number" min="0" max="59"
+                  value={adjM}
+                  onChange={(e) => setAdjM(e.target.value)}
+                  style={{ width: 64 }}
+                  placeholder="0"
+                />
+                <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>m</span>
+              </div>
+            </div>
             <p className="text-muted" style={{ fontSize: '0.78rem', marginTop: 4 }}>
-              Edit if the approved duration differs from the recorded duration ({target.duration}).
+              Recorded duration: {target.duration}
             </p>
           </div>
         )}
@@ -387,7 +718,6 @@ export default function Dashboard() {
 
   const [unlocked, setUnlocked] = useState(false);
   const [dashTab,  setDashTab]  = useState('contractors');
-  // tabs: 'contractors' | 'overtime' | 'approvals' | 'monthly' | 'compliance'
 
   // Contractors tab
   const [dateFrom, setDateFrom] = useState(today);
@@ -397,6 +727,14 @@ export default function Dashboard() {
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
+
+  // Amend contractor state
+  const [amendModal,   setAmendModal]   = useState(null);
+  const [amendMessage, setAmendMessage] = useState('');
+
+  // Amend overtime state
+  const [amendOvertimeModal,   setAmendOvertimeModal]   = useState(null);
+  const [amendOvertimeMessage, setAmendOvertimeMessage] = useState('');
 
   // Overtime tab
   const [overtimeData,    setOvertimeData]    = useState(null);
@@ -420,7 +758,7 @@ export default function Dashboard() {
   const [complianceError,      setComplianceError]      = useState(null);
   const [complianceMsg,        setComplianceMsg]        = useState('');
   const [complianceSubmitting, setComplianceSubmitting] = useState(false);
-  const [filesModalCompany,    setFilesModalCompany]    = useState(null); // company name or null
+  const [filesModalCompany,    setFilesModalCompany]    = useState(null);
   const [compForm, setCompForm] = useState({
     companyName: '', ramsDate: '', inductionDate: '', insuranceDate: '',
   });
@@ -481,7 +819,6 @@ export default function Dashboard() {
     finally { setComplianceLoading(false); }
   }, []);
 
-  // Auto-refresh every 60s when unlocked
   useEffect(() => {
     if (!unlocked) return;
     fetchData();
@@ -499,22 +836,28 @@ export default function Dashboard() {
     return <PinGate onUnlock={() => setUnlocked(true)} />;
   }
 
-  // ── Derived: approvals ────────────────────────────────────────────────────────
-  const pendingForManager = (overtimeData || []).filter((r) =>
-    r.approvalStatus === 'PENDING' && currentManager &&
-    ENGINEER_MANAGER_MAP[r.engineerName] === currentManager
-  );
+  // ── Derived: approvals (dual approval — each manager sees what they haven't approved) ──
+  const pendingForManager = (overtimeData || []).filter((r) => {
+    if (!currentManager) return false;
+    if (r.status !== 'COMPLETED') return false;
+    if (r.approvalStatus === 'FULLY APPROVED' || r.approvalStatus === 'REJECTED') return false;
+    if (currentManager === 'Dean Marsh'      && r.approvedByDean)   return false;
+    if (currentManager === 'Laurel Anderson' && r.approvedByLaurel) return false;
+    return true;
+  });
 
-  const approvedForManager = (overtimeData || []).filter((r) =>
-    r.approvalStatus === 'APPROVED' && currentManager &&
-    ENGINEER_MANAGER_MAP[r.engineerName] === currentManager
-  );
+  const approvedByCurrentManager = (overtimeData || []).filter((r) => {
+    if (!currentManager) return false;
+    if (currentManager === 'Dean Marsh')      return !!r.approvedByDean;
+    if (currentManager === 'Laurel Anderson') return !!r.approvedByLaurel;
+    return false;
+  });
 
-  // ── Derived: monthly summary ──────────────────────────────────────────────────
+  // ── Derived: monthly summary (FULLY APPROVED only) ───────────────────────────
   const useDateRange = !!(summaryFrom && summaryTo);
 
   const approvedRecords = (overtimeData || []).filter((r) => {
-    if (r.approvalStatus !== 'APPROVED') return false;
+    if (r.approvalStatus !== 'FULLY APPROVED') return false;
     if (useDateRange) {
       const dateStr = r.startTimestamp ? String(r.startTimestamp).slice(0, 10) : '';
       if (!dateStr || dateStr < summaryFrom || dateStr > summaryTo) return false;
@@ -533,7 +876,7 @@ export default function Dashboard() {
     return acc;
   }, {});
 
-  // ── Approval actions ──────────────────────────────────────────────────────────
+  // ── Actions ───────────────────────────────────────────────────────────────────
   function openApproval(record, action) {
     setApprovalMessage('');
     setApprovalModal({ target: record, action });
@@ -543,6 +886,42 @@ export default function Dashboard() {
     setApprovalModal(null);
     setApprovalMessage(message);
     fetchOvertimeData();
+  }
+
+  function handleAmendConfirm(message) {
+    setAmendModal(null);
+    setAmendMessage(message);
+    fetchData();
+  }
+
+  function handleAmendOvertimeConfirm(message) {
+    setAmendOvertimeModal(null);
+    setAmendOvertimeMessage(message);
+    fetchOvertimeData();
+  }
+
+  // ── CSV export for monthly summary ───────────────────────────────────────────
+  function exportCsv() {
+    const headers = ['Engineer', 'Date', 'Start', 'End', 'Duration', 'Adjusted Duration', 'Work Description'];
+    const csvRows = approvedRecords.map((r) => [
+      r.engineerName,
+      fmtDate(r.startTimestamp),
+      fmtTime(r.startTimestamp),
+      fmtTime(r.endTimestamp),
+      r.duration,
+      r.adjustedDuration || r.duration,
+      r.workDescription || '',
+    ]);
+    const csv = [headers, ...csvRows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `overtime-${useDateRange ? `${summaryFrom}-to-${summaryTo}` : summaryMonth}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // ── Compliance form submit ────────────────────────────────────────────────────
@@ -562,7 +941,6 @@ export default function Dashboard() {
     fd.append('insuranceDate', compForm.insuranceDate);
     fd.append('managerName',   currentManager || 'Manager');
     if (compDoc) {
-      // compDoc is a FileList (multiple) or a single File
       const fileList = compDoc instanceof FileList ? Array.from(compDoc) : [compDoc];
       fileList.forEach((f) => fd.append('document', f));
     }
@@ -600,7 +978,6 @@ export default function Dashboard() {
 
   return (
     <Layout title="Dashboard" wide>
-      {/* Compliance files modal */}
       {filesModalCompany && (
         <ComplianceFilesModal
           companyName={filesModalCompany}
@@ -608,7 +985,6 @@ export default function Dashboard() {
         />
       )}
 
-      {/* Approval PIN modal */}
       {approvalModal && (
         <ApprovalModal
           target={approvalModal.target}
@@ -616,6 +992,22 @@ export default function Dashboard() {
           managerName={currentManager}
           onConfirm={handleApprovalConfirm}
           onCancel={() => setApprovalModal(null)}
+        />
+      )}
+
+      {amendModal && (
+        <AmendModal
+          record={amendModal}
+          onConfirm={handleAmendConfirm}
+          onCancel={() => setAmendModal(null)}
+        />
+      )}
+
+      {amendOvertimeModal && (
+        <AmendOvertimeModal
+          record={amendOvertimeModal}
+          onConfirm={handleAmendOvertimeConfirm}
+          onCancel={() => setAmendOvertimeModal(null)}
         />
       )}
 
@@ -632,20 +1024,25 @@ export default function Dashboard() {
       <div className="card">
         <p className="card__title">Manager Dashboard</p>
 
-        {/* Tab navigation */}
         <div className="nav-tabs" style={{ marginBottom: 0 }}>
           {tabs.map((t) => (
             <button
               key={t.id}
               className={`nav-tab ${dashTab === t.id ? 'nav-tab--active' : ''}`}
-              onClick={() => { setDashTab(t.id); setApprovalMessage(''); setComplianceMsg(''); }}
+              onClick={() => {
+                setDashTab(t.id);
+                setApprovalMessage('');
+                setComplianceMsg('');
+                setAmendMessage('');
+                setAmendOvertimeMessage('');
+              }}
             >
               {t.label}
             </button>
           ))}
         </div>
 
-        {/* ── Per-tab filter rows ── */}
+        {/* Per-tab filter rows */}
         {dashTab === 'contractors' && (
           <div className="filter-row" style={{ marginTop: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -736,7 +1133,8 @@ export default function Dashboard() {
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {dashTab === 'contractors' && (
         <>
-          {error && <div className="alert alert--error">{error}</div>}
+          {error        && <div className="alert alert--error">{error}</div>}
+          {amendMessage && <div className="alert alert--success">{amendMessage}</div>}
 
           {data && (
             <>
@@ -767,7 +1165,8 @@ export default function Dashboard() {
                     <table>
                       <thead>
                         <tr>
-                          <th>ID</th><th>Name</th><th>Company</th><th>Signed In</th><th>Status</th>
+                          <th>ID</th><th>Name</th><th>Company</th><th>Signed In</th>
+                          <th>Contact No.</th><th>Building(s)</th><th>Point of Contact</th><th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -777,6 +1176,9 @@ export default function Dashboard() {
                             <td><strong>{row.operativeName}</strong></td>
                             <td>{row.companyName}</td>
                             <td>{fmtTime(row.signInTime)}</td>
+                            <td>{row.contactNumber  || <span className="text-muted">—</span>}</td>
+                            <td>{row.buildings      || <span className="text-muted">—</span>}</td>
+                            <td>{row.pointOfContact || <span className="text-muted">—</span>}</td>
                             <td><span className="badge badge--active">Active</span></td>
                           </tr>
                         ))}
@@ -799,28 +1201,65 @@ export default function Dashboard() {
                       <thead>
                         <tr>
                           <th>ID</th><th>Name</th><th>Company</th>
-                          <th>Date</th><th>In</th><th>Out</th>
-                          <th>Duration</th><th>Work Completed</th><th>Photo</th>
+                          <th>Date</th><th>In</th><th>Out</th><th>Duration</th>
+                          <th>Contact No.</th><th>Building(s)</th><th>Point of Contact</th>
+                          <th>Work Completed</th>
+                          <th>Permit</th><th>Fire Safety</th><th>Asbestos</th>
+                          <th>RAMS</th><th>Induction</th><th>Insurance</th>
+                          <th>Photo</th><th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {data.completed.map((row, i) => (
                           <tr key={i}>
                             <td>{row.id}</td>
-                            <td><strong>{row.operativeName}</strong></td>
+                            <td>
+                              <strong>{row.operativeName}</strong>
+                              {row.amendedBy && (
+                                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 2 }}>
+                                  Amended by {row.amendedBy}
+                                  {row.amendedAt ? ` · ${fmtDate(row.amendedAt)}` : ''}
+                                </div>
+                              )}
+                            </td>
                             <td>{row.companyName}</td>
                             <td>{fmtDate(row.signInTime)}</td>
                             <td>{fmtTime(row.signInTime)}</td>
                             <td>{fmtTime(row.signOutTime)}</td>
                             <td>{row.duration}</td>
-                            <td style={{ maxWidth: 220, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            <td>{row.contactNumber  || <span className="text-muted">—</span>}</td>
+                            <td>{row.buildings      || <span className="text-muted">—</span>}</td>
+                            <td>{row.pointOfContact || <span className="text-muted">—</span>}</td>
+                            <td style={{ maxWidth: 180, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                               {row.notes || <span className="text-muted">—</span>}
+                            </td>
+                            <td style={{ fontSize: '0.8rem' }}>
+                              {row.permitRequired === 'Yes'
+                                ? <span style={{ color: '#b45309' }}>{row.permitTypes || 'Yes'}</span>
+                                : (row.permitRequired || <span className="text-muted">—</span>)}
+                            </td>
+                            <td style={{ fontSize: '0.8rem' }}>{row.fireSafetyAffected || <span className="text-muted">—</span>}</td>
+                            <td style={{ fontSize: '0.8rem' }}>{row.asbestosChecked    || <span className="text-muted">—</span>}</td>
+                            <td style={{ fontSize: '0.8rem', color: row.ramsApproved === 'No' ? '#b91c1c' : undefined }}>
+                              {row.ramsApproved || <span className="text-muted">—</span>}
+                            </td>
+                            <td style={{ fontSize: '0.8rem', color: row.inductionComplete === 'No' ? '#b91c1c' : undefined }}>
+                              {row.inductionComplete || <span className="text-muted">—</span>}
+                            </td>
+                            <td style={{ fontSize: '0.8rem', color: row.insuranceValid === 'No' ? '#b91c1c' : undefined }}>
+                              {row.insuranceValid || <span className="text-muted">—</span>}
                             </td>
                             <td>
                               {row.photoUrl
                                 ? <a href={row.photoUrl} target="_blank" rel="noreferrer"
                                      style={{ color: '#1e40af', fontSize: '0.85rem' }}>View</a>
                                 : <span className="text-muted">—</span>}
+                            </td>
+                            <td>
+                              <button className="btn btn--secondary btn--sm"
+                                onClick={() => setAmendModal(row)}>
+                                Amend
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -843,7 +1282,8 @@ export default function Dashboard() {
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {dashTab === 'overtime' && (
         <>
-          {overtimeError && <div className="alert alert--error">{overtimeError}</div>}
+          {overtimeError        && <div className="alert alert--error">{overtimeError}</div>}
+          {amendOvertimeMessage && <div className="alert alert--success">{amendOvertimeMessage}</div>}
 
           <div className="card">
             <p className="card__title">Engineer Overtime Records</p>
@@ -861,7 +1301,7 @@ export default function Dashboard() {
                     <tr>
                       <th>Engineer</th><th>Date</th><th>Start</th><th>End</th>
                       <th>Duration</th><th>Work Description</th>
-                      <th>Status</th><th>Approval</th><th>Image</th>
+                      <th>Status</th><th>Approval</th><th>Approved By</th><th>Image</th><th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -875,7 +1315,12 @@ export default function Dashboard() {
                             ? fmtTime(row.endTimestamp)
                             : <span className="badge badge--active">Active</span>}
                         </td>
-                        <td>{row.duration}</td>
+                        <td>
+                          {row.adjustedDuration
+                            ? <><strong>{row.adjustedDuration}</strong>{' '}
+                                <span className="text-muted" style={{ fontSize: '0.75rem' }}>(adj.)</span></>
+                            : row.duration}
+                        </td>
                         <td style={{ maxWidth: 200, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {row.workDescription || <span className="text-muted">—</span>}
                         </td>
@@ -886,18 +1331,25 @@ export default function Dashboard() {
                         </td>
                         <td>
                           {row.approvalStatus
-                            ? <span style={{ fontSize: '0.8rem', fontWeight: 600,
-                                color: row.approvalStatus === 'APPROVED' ? '#15803d'
-                                     : row.approvalStatus === 'REJECTED'  ? '#b91c1c' : '#b45309' }}>
-                                {row.approvalStatus}
-                              </span>
+                            ? <ApprovalBadge status={row.approvalStatus} />
                             : <span className="text-muted">—</span>}
+                        </td>
+                        <td style={{ fontSize: '0.78rem' }}>
+                          {row.approvedByDean   && <div>Dean: {fmtDate(row.deanApprovalTimestamp)}</div>}
+                          {row.approvedByLaurel && <div>Laurel: {fmtDate(row.laurelApprovalTimestamp)}</div>}
+                          {!row.approvedByDean && !row.approvedByLaurel && <span className="text-muted">—</span>}
                         </td>
                         <td>
                           {row.imagePath
                             ? <a href={row.imagePath} target="_blank" rel="noreferrer"
                                  style={{ color: '#1e40af', fontSize: '0.85rem' }}>View</a>
                             : <span className="text-muted">—</span>}
+                        </td>
+                        <td>
+                          <button className="btn btn--secondary btn--sm"
+                            onClick={() => { setAmendOvertimeMessage(''); setAmendOvertimeModal(row); }}>
+                            Amend / Delete
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -923,17 +1375,20 @@ export default function Dashboard() {
             </div>
           ) : (
             <>
-              {/* ── A. Pending Approvals ─────────────────────────────────── */}
+              {/* ── A. Pending / Partially Approved ─────────────────────── */}
               <div className="card">
                 <p className="card__title">
-                  Pending Approvals — {currentManager} ({pendingForManager.length})
+                  Awaiting Your Approval — {currentManager} ({pendingForManager.length})
+                </p>
+                <p className="text-sm text-muted" style={{ marginBottom: 8 }}>
+                  Includes PENDING and PARTIALLY APPROVED records you have not yet approved.
                 </p>
 
                 {overtimeLoading && !overtimeData && (
                   <p className="text-muted text-sm">Loading…</p>
                 )}
                 {overtimeData && pendingForManager.length === 0 && (
-                  <p className="text-muted text-sm">No pending approvals for {currentManager}.</p>
+                  <p className="text-muted text-sm">No records awaiting your approval.</p>
                 )}
                 {pendingForManager.length > 0 && (
                   <div className="table-wrap">
@@ -941,67 +1396,75 @@ export default function Dashboard() {
                       <thead>
                         <tr>
                           <th>Engineer</th><th>Date</th><th>Start</th><th>End</th>
-                          <th>Duration</th><th>Work Description</th><th>Image</th><th>Actions</th>
+                          <th>Duration</th><th>Work Description</th>
+                          <th>Status</th><th>Other Approver</th><th>Image</th><th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {pendingForManager.map((row, i) => (
-                          <tr key={i}>
-                            <td><strong>{row.engineerName}</strong></td>
-                            <td>{fmtDate(row.startTimestamp)}</td>
-                            <td>{fmtTime(row.startTimestamp)}</td>
-                            <td>{fmtTime(row.endTimestamp)}</td>
-                            <td>{row.duration}</td>
-                            <td style={{ maxWidth: 200, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                              {row.workDescription || <span className="text-muted">—</span>}
-                            </td>
-                            <td>
-                              {row.imagePath
-                                ? <a href={row.imagePath} target="_blank" rel="noreferrer"
-                                     style={{ color: '#1e40af', fontSize: '0.85rem' }}>View</a>
-                                : <span className="text-muted">—</span>}
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', gap: 6 }}>
-                                <button className="btn btn--primary btn--sm"
-                                  onClick={() => openApproval(row, 'APPROVED')}>
-                                  Approve
-                                </button>
-                                <button className="btn btn--danger btn--sm"
-                                  onClick={() => openApproval(row, 'REJECTED')}>
-                                  Reject
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                        {pendingForManager.map((row, i) => {
+                          const otherApproved = currentManager === 'Dean Marsh'
+                            ? (row.approvedByLaurel ? `Laurel ✓ ${fmtDate(row.laurelApprovalTimestamp)}` : 'Laurel: pending')
+                            : (row.approvedByDean   ? `Dean ✓ ${fmtDate(row.deanApprovalTimestamp)}`     : 'Dean: pending');
+                          return (
+                            <tr key={i}>
+                              <td><strong>{row.engineerName}</strong></td>
+                              <td>{fmtDate(row.startTimestamp)}</td>
+                              <td>{fmtTime(row.startTimestamp)}</td>
+                              <td>{fmtTime(row.endTimestamp)}</td>
+                              <td>{row.duration}</td>
+                              <td style={{ maxWidth: 200, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                {row.workDescription || <span className="text-muted">—</span>}
+                              </td>
+                              <td><ApprovalBadge status={row.approvalStatus || 'PENDING'} /></td>
+                              <td style={{ fontSize: '0.78rem', color: '#6b7280' }}>{otherApproved}</td>
+                              <td>
+                                {row.imagePath
+                                  ? <a href={row.imagePath} target="_blank" rel="noreferrer"
+                                       style={{ color: '#1e40af', fontSize: '0.85rem' }}>View</a>
+                                  : <span className="text-muted">—</span>}
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  <button className="btn btn--primary btn--sm"
+                                    onClick={() => openApproval(row, 'APPROVED')}>
+                                    Approve
+                                  </button>
+                                  <button className="btn btn--danger btn--sm"
+                                    onClick={() => openApproval(row, 'REJECTED')}>
+                                    Reject
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 )}
               </div>
 
-              {/* ── B. Approved Overtime (read-only) ────────────────────── */}
+              {/* ── B. Already Approved by this manager ─────────────────── */}
               <div className="card">
                 <p className="card__title" style={{ color: '#15803d' }}>
-                  Approved Overtime — {currentManager} ({approvedForManager.length})
+                  Your Approved Records — {currentManager} ({approvedByCurrentManager.length})
                 </p>
 
-                {overtimeData && approvedForManager.length === 0 && (
-                  <p className="text-muted text-sm">No approved overtime for {currentManager}.</p>
+                {overtimeData && approvedByCurrentManager.length === 0 && (
+                  <p className="text-muted text-sm">No records approved by {currentManager} yet.</p>
                 )}
-                {approvedForManager.length > 0 && (
+                {approvedByCurrentManager.length > 0 && (
                   <div className="table-wrap">
                     <table>
                       <thead>
                         <tr>
                           <th>Engineer</th><th>Date</th><th>Start</th><th>End</th>
                           <th>Duration</th><th>Work Description</th>
-                          <th>Approved By</th><th>Approved At</th><th>Image</th>
+                          <th>Overall Status</th><th>Your Approval</th><th>Image</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {approvedForManager.map((row, i) => (
+                        {approvedByCurrentManager.map((row, i) => (
                           <tr key={i}>
                             <td><strong>{row.engineerName}</strong></td>
                             <td>{fmtDate(row.startTimestamp)}</td>
@@ -1009,17 +1472,18 @@ export default function Dashboard() {
                             <td>{fmtTime(row.endTimestamp)}</td>
                             <td>
                               {row.adjustedDuration
-                                ? <><strong>{row.adjustedDuration}</strong> <span className="text-muted" style={{ fontSize: '0.78rem' }}>(adj. from {row.duration})</span></>
+                                ? <><strong>{row.adjustedDuration}</strong>{' '}
+                                    <span className="text-muted" style={{ fontSize: '0.78rem' }}>(adj. from {row.duration})</span></>
                                 : row.duration}
                             </td>
                             <td style={{ maxWidth: 180, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                               {row.workDescription || <span className="text-muted">—</span>}
                             </td>
-                            <td>{row.approvedBy || <span className="text-muted">—</span>}</td>
-                            <td style={{ fontSize: '0.8rem' }}>
-                              {row.approvalTimestamp
-                                ? fmtDate(row.approvalTimestamp)
-                                : <span className="text-muted">—</span>}
+                            <td><ApprovalBadge status={row.approvalStatus} /></td>
+                            <td style={{ fontSize: '0.78rem' }}>
+                              {currentManager === 'Dean Marsh'
+                                ? fmtDate(row.deanApprovalTimestamp)
+                                : fmtDate(row.laurelApprovalTimestamp)}
                             </td>
                             <td>
                               {row.imagePath
@@ -1047,13 +1511,20 @@ export default function Dashboard() {
           {overtimeError && <div className="alert alert--error">{overtimeError}</div>}
 
           <div className="card">
-            <p className="card__title">
-              Overtime Summary —{' '}
-              {useDateRange ? `${summaryFrom} to ${summaryTo}` : summaryMonth}
-              {summaryEngineer && ` (${summaryEngineer})`}
-            </p>
-            <p className="text-sm text-muted" style={{ marginBottom: 12 }}>
-              Includes only APPROVED overtime sessions.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+              <p className="card__title" style={{ margin: 0 }}>
+                Overtime Summary —{' '}
+                {useDateRange ? `${summaryFrom} to ${summaryTo}` : summaryMonth}
+                {summaryEngineer && ` (${summaryEngineer})`}
+              </p>
+              {Object.keys(summaryByEngineer).length > 0 && (
+                <button className="btn btn--secondary btn--sm" onClick={exportCsv}>
+                  Export CSV
+                </button>
+              )}
+            </div>
+            <p className="text-sm text-muted" style={{ marginBottom: 12, marginTop: 4 }}>
+              Includes only FULLY APPROVED overtime sessions.
               {useDateRange && <> Date range overrides month filter.</>}
             </p>
 
@@ -1061,7 +1532,7 @@ export default function Dashboard() {
               <p className="text-muted text-sm">Loading…</p>
             )}
             {overtimeData && Object.keys(summaryByEngineer).length === 0 && (
-              <p className="text-muted text-sm">No approved overtime for this period.</p>
+              <p className="text-muted text-sm">No fully approved overtime for this period.</p>
             )}
 
             {Object.keys(summaryByEngineer).length > 0 && (
@@ -1084,14 +1555,8 @@ export default function Dashboard() {
                       ))}
                     <tr style={{ borderTop: '2px solid #e5e7eb', fontWeight: 600 }}>
                       <td>Total</td>
-                      <td>
-                        {formatHours(
-                          Object.values(summaryByEngineer).reduce((s, v) => s + v.totalHours, 0)
-                        )}
-                      </td>
-                      <td>
-                        {Object.values(summaryByEngineer).reduce((s, v) => s + v.sessions, 0)}
-                      </td>
+                      <td>{formatHours(Object.values(summaryByEngineer).reduce((s, v) => s + v.totalHours, 0))}</td>
+                      <td>{Object.values(summaryByEngineer).reduce((s, v) => s + v.sessions, 0)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1108,7 +1573,6 @@ export default function Dashboard() {
         <>
           {complianceError && <div className="alert alert--error">{complianceError}</div>}
 
-          {/* Update form */}
           <div className="card">
             <p className="card__title">Update Contractor Compliance</p>
             <p className="text-sm text-muted" style={{ marginBottom: 12 }}>
@@ -1178,7 +1642,6 @@ export default function Dashboard() {
             </form>
           </div>
 
-          {/* Compliance status table */}
           <div className="card">
             <p className="card__title">Compliance Status Overview</p>
 
@@ -1216,27 +1679,21 @@ export default function Dashboard() {
                                  : row.ramsExpired === false ? '#15803d' : '#6b7280',
                           }}>
                             {row.ramsExpiry ? fmtDate(row.ramsExpiry) : <span className="text-muted">—</span>}
-                            {row.ramsExpired === true && (
-                              <span style={{ fontSize: '0.75rem', marginLeft: 4 }}>⚠</span>
-                            )}
+                            {row.ramsExpired === true && <span style={{ fontSize: '0.75rem', marginLeft: 4 }}>⚠</span>}
                           </td>
                           <td style={{
                             color: row.inductionExpired === true ? '#b91c1c'
                                  : row.inductionExpired === false ? '#15803d' : '#6b7280',
                           }}>
                             {row.inductionExpiry ? fmtDate(row.inductionExpiry) : <span className="text-muted">—</span>}
-                            {row.inductionExpired === true && (
-                              <span style={{ fontSize: '0.75rem', marginLeft: 4 }}>⚠</span>
-                            )}
+                            {row.inductionExpired === true && <span style={{ fontSize: '0.75rem', marginLeft: 4 }}>⚠</span>}
                           </td>
                           <td style={{
                             color: row.insuranceExpired === true ? '#b91c1c'
                                  : row.insuranceExpired === false ? '#15803d' : '#6b7280',
                           }}>
                             {row.insuranceExpiry ? fmtDate(row.insuranceExpiry) : <span className="text-muted">—</span>}
-                            {row.insuranceExpired === true && (
-                              <span style={{ fontSize: '0.75rem', marginLeft: 4 }}>⚠</span>
-                            )}
+                            {row.insuranceExpired === true && <span style={{ fontSize: '0.75rem', marginLeft: 4 }}>⚠</span>}
                           </td>
                           <td><ComplianceBadge status={row.complianceStatus} /></td>
                           <td>

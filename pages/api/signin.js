@@ -12,8 +12,14 @@
  *   lastRAMSReviewDate, lastInductionDate, lastComplianceDate
  * }
  */
-import { appendRow, findActiveSession } from '../../lib/db';
+import { appendRow, findActiveSession, upsertOperativeInduction } from '../../lib/db';
 import { ukDateString, ukDateTimeString } from '../../lib/ukTime';
+
+function addMonths(dateStr, months) {
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().split('T')[0];
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -80,7 +86,6 @@ export default async function handler(req, res) {
       'Work Completed':        '',
       'Status':                'Active',
       'Photo URL':             '',
-      // New H&S columns
       'Contractor Type':       contractorType || '',
       'Permit Required':       permitRequired || '',
       'Permit Types':          permitTypes || '',
@@ -93,6 +98,21 @@ export default async function handler(req, res) {
       'Last Induction Date':   lastInductionDate || '',
       'Last Compliance Date':  lastComplianceDate || '',
     });
+
+    // If operative confirmed induction today, update per-person induction record
+    if (inductionComplete === 'Yes' && operativeName && today) {
+      try {
+        await upsertOperativeInduction(operativeName.trim(), {
+          company_name:     companyName.trim(),
+          induction_date:   today,
+          induction_expiry: addMonths(today, 12),
+          updated_at:       ukDateTimeString(),
+        });
+      } catch (inductionErr) {
+        // Non-fatal — sign-in still succeeds
+        console.error('[signin] Failed to update operative induction record:', inductionErr.message);
+      }
+    }
 
     return res.status(200).json({
       success: true,

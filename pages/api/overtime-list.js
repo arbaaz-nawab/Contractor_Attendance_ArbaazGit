@@ -5,7 +5,7 @@
  *   month          YYYY-MM   filter by start month
  *   engineer       string    filter by engineer name (partial match)
  *   status         string    filter by Status (ACTIVE / COMPLETED)
- *   approvalStatus string    filter by Approval Status (PENDING / APPROVED / REJECTED)
+ *   approvalStatus string    filter by Approval Status (PENDING / PARTIALLY APPROVED / FULLY APPROVED / REJECTED)
  *
  * Returns: { success, records: [...] }
  */
@@ -44,19 +44,23 @@ export default async function handler(req, res) {
     }
 
     const records = rows.map((r) => ({
-      _row:              r._row,
-      engineerName:      r['Engineer Name'],
-      startTimestamp:    r['Start Timestamp'],
-      endTimestamp:      r['End Timestamp'],
-      workDescription:   r['Work Description'],
-      imagePath:         r['Image Path'],
-      status:            r['Status'],
-      approvalStatus:    r['Approval Status'],
-      approvedBy:        r['Approved By'],
-      approvalTimestamp: r['Approval Timestamp'],
-      notes:             r['Notes'],
-      duration:          calcDuration(r['Start Timestamp'], r['End Timestamp']),
-      adjustedDuration:  r['Adjusted Duration'] || '',
+      _row:                    r._row,
+      engineerName:            r['Engineer Name'],
+      startTimestamp:          r['Start Timestamp'],
+      endTimestamp:            r['End Timestamp'],
+      workDescription:         r['Work Description'],
+      imagePath:               r['Image Path'],
+      status:                  r['Status'],
+      approvalStatus:          r['Approval Status'],
+      approvedBy:              r['Approved By'],
+      approvalTimestamp:       r['Approval Timestamp'],
+      notes:                   r['Notes'],
+      duration:                calcDuration(r['Start Timestamp'], r['End Timestamp']),
+      adjustedDuration:        r['Adjusted Duration']        || '',
+      approvedByDean:          r['Approved By Dean']         || '',
+      approvedByLaurel:        r['Approved By Laurel']       || '',
+      deanApprovalTimestamp:   r['Dean Approval Timestamp']  || '',
+      laurelApprovalTimestamp: r['Laurel Approval Timestamp']|| '',
     }));
 
     return res.status(200).json({ success: true, records });

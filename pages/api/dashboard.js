@@ -30,26 +30,44 @@ export default async function handler(req, res) {
     const active = rows
       .filter((r) => r['Status'] === 'Active')
       .map((r) => ({
-        id:            r['ID Number'],
-        operativeName: r['Operative Name'],
-        companyName:   r['Company Name'],
-        signInTime:    r['Sign-In Time'],
-        status:        'Active',
-        notes:         r['Work Completed'],
+        _row:           r._row,
+        id:             r['ID Number'],
+        operativeName:  r['Operative Name'],
+        companyName:    r['Company Name'],
+        signInTime:     r['Sign-In Time'],
+        status:         'Active',
+        contactNumber:  r['Contact Number'],
+        buildings:      r['Buildings'],
+        pointOfContact: r['Point of Contact'],
       }));
 
     const completed = rows
       .filter((r) => r['Status'] === 'Completed')
       .map((r) => ({
-        id:            r['ID Number'],
-        operativeName: r['Operative Name'],
-        companyName:   r['Company Name'],
-        signInTime:    r['Sign-In Time'],
-        signOutTime:   r['Sign-Out Time'],
-        duration:      calcDuration(r['Sign-In Time'], r['Sign-Out Time']),
-        photoUrl:      r['Photo URL'],
-        status:        'Completed',
-        notes:         r['Work Completed'],
+        _row:              r._row,
+        id:                r['ID Number'],
+        operativeName:     r['Operative Name'],
+        companyName:       r['Company Name'],
+        signInTime:        r['Sign-In Time'],
+        signOutTime:       r['Sign-Out Time'],
+        duration:          calcDuration(r['Sign-In Time'], r['Sign-Out Time']),
+        photoUrl:          r['Photo URL'],
+        status:            'Completed',
+        notes:             r['Work Completed'],
+        pointOfContact:    r['Point of Contact'],
+        contactNumber:     r['Contact Number'],
+        buildings:         r['Buildings'],
+        // H&S answers
+        permitRequired:    r['Permit Required'],
+        permitTypes:       r['Permit Types'],
+        fireSafetyAffected: r['Fire Safety Affected'],
+        asbestosChecked:   r['Asbestos Checked'],
+        ramsApproved:      r['RAMS Approved'],
+        inductionComplete: r['Induction Complete'],
+        insuranceValid:    r['Insurance Valid'],
+        // Amend tracking
+        amendedBy:         r['Amended By'],
+        amendedAt:         r['Amended At'],
       }));
 
     return res.status(200).json({

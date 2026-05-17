@@ -10,8 +10,8 @@
 import { IncomingForm } from 'formidable';
 import fs from 'fs';
 import { findActiveSession, updateRow } from '../../lib/db';
-import { uploadPhoto, buildPhotoKey } from '../../lib/r2Upload';
-import { ukDateString, ukDateTimeString } from '../../lib/ukTime';
+import { uploadPhoto, buildPhotoKey, isR2Configured } from '../../lib/r2Upload';
+import { ukDateString, ukDateTimeString, calcDuration } from '../../lib/ukTime';
 
 export const config = {
   api: { bodyParser: false },
@@ -52,29 +52,46 @@ export default async function handler(req, res) {
     }
 
     // ── Optional photo upload to R2 ───────────────────────────────────────────
-    let photoUrl = '';
+    let photoUrl     = '';
+    let photoSkipped = false;
 
     if (photoFile && photoFile.size > 0) {
-      try {
-        const photoBuffer = fs.readFileSync(photoFile.filepath);
-        const photoKey = buildPhotoKey(today, idNumber, session['Operative Name']);
-        photoUrl = await uploadPhoto(photoBuffer, photoKey, photoFile.mimetype || 'image/jpeg');
-      } finally {
-        if (fs.existsSync(photoFile.filepath)) fs.unlinkSync(photoFile.filepath);
+      if (!isR2Configured()) {
+        photoSkipped = true;
+        console.warn('[signout] R2 not configured — photo not stored.');
+      } else {
+        try {
+          const photoBuffer = fs.readFileSync(photoFile.filepath);
+          const photoKey    = buildPhotoKey(today, idNumber, session['Operative Name']);
+          photoUrl          = await uploadPhoto(photoBuffer, photoKey, photoFile.mimetype || 'image/jpeg');
+        } catch (uploadErr) {
+          photoSkipped = true;
+          console.error('[signout] Photo upload failed (sign-out continues):', uploadErr.message);
+        }
       }
+      try {
+        if (photoFile.filepath && fs.existsSync(photoFile.filepath)) fs.unlinkSync(photoFile.filepath);
+      } catch { /* ignore temp-file cleanup errors */ }
     }
 
+    const signOutTime = ukDateTimeString();
+
     await updateRow(session._row, {
-      'Sign-Out Time':  ukDateTimeString(),
+      'Sign-Out Time':  signOutTime,
       'Work Completed': workCompleted || '',
       'Status':         'Completed',
       'Photo URL':      photoUrl,
     });
 
+    const duration = calcDuration(session['Sign-In Time'], signOutTime);
+    const photoMsg = photoSkipped ? ' (Photo could not be saved — storage not configured.)' : '';
+
     return res.status(200).json({
-      success: true,
-      message: `${session['Operative Name']} signed out successfully.`,
+      success:       true,
+      message:       `${session['Operative Name']} signed out successfully.${photoMsg}`,
       photoUploaded: !!photoUrl,
+      photoSkipped,
+      duration,
     });
   } catch (err) {
     console.error('Sign-out error:', err);

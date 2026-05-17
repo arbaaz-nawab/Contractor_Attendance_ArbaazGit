@@ -11,7 +11,7 @@
 import { IncomingForm } from 'formidable';
 import fs from 'fs';
 import { findActiveOvertimeSession, updateOvertimeRow } from '../../lib/db';
-import { uploadPhoto, buildPhotoKey } from '../../lib/r2Upload';
+import { uploadPhoto, buildPhotoKey, isR2Configured } from '../../lib/r2Upload';
 import { ukDateString, ukDateTimeString } from '../../lib/ukTime';
 
 export const config = {
@@ -54,16 +54,26 @@ export default async function handler(req, res) {
     }
 
     // ── Optional photo upload to R2 ───────────────────────────────────────────
-    let imageUrl = '';
+    let imageUrl     = '';
+    let photoSkipped = false;
 
     if (photoFile && photoFile.size > 0) {
-      try {
-        const buffer = fs.readFileSync(photoFile.filepath);
-        const key    = buildPhotoKey(ukDateString(), engineerName.trim(), 'overtime');
-        imageUrl     = await uploadPhoto(buffer, key, photoFile.mimetype || 'image/jpeg');
-      } finally {
-        if (fs.existsSync(photoFile.filepath)) fs.unlinkSync(photoFile.filepath);
+      if (!isR2Configured()) {
+        photoSkipped = true;
+        console.warn('[overtime-signout] R2 not configured — photo not stored.');
+      } else {
+        try {
+          const buffer = fs.readFileSync(photoFile.filepath);
+          const key    = buildPhotoKey(ukDateString(), engineerName.trim(), 'overtime');
+          imageUrl     = await uploadPhoto(buffer, key, photoFile.mimetype || 'image/jpeg');
+        } catch (uploadErr) {
+          photoSkipped = true;
+          console.error('[overtime-signout] Photo upload failed (overtime sign-out continues):', uploadErr.message);
+        }
       }
+      try {
+        if (photoFile.filepath && fs.existsSync(photoFile.filepath)) fs.unlinkSync(photoFile.filepath);
+      } catch { /* ignore temp-file cleanup errors */ }
     }
 
     await updateOvertimeRow(session._row, {
@@ -74,10 +84,13 @@ export default async function handler(req, res) {
       'Approval Status':  'PENDING',
     });
 
+    const photoMsg = photoSkipped ? ' (Photo could not be saved — storage not configured.)' : '';
+
     return res.status(200).json({
-      success: true,
-      message: `${engineerName} overtime ended. Pending manager approval.`,
+      success:       true,
+      message:       `${engineerName} overtime ended. Pending manager approval.${photoMsg}`,
       photoUploaded: !!imageUrl,
+      photoSkipped,
     });
   } catch (err) {
     console.error('Overtime sign-out error:', err);

@@ -141,3 +141,17 @@ dist
 # Project-specific: local Excel log and compliance docs (data stays in Supabase)
 *.xlsx
 Contractor Compliances/
+
+# Nested git repository (local copy — should not be in source control)
+Contractor_Attendance_ArbaazGit/
+
+# Internal documentation not meant for public repos
+PROJECT_EXPLANATION.txt
+
+# Environment files (all variants — belt-and-suspenders)
+.env
+.env.*
+!.env.example
+
+# Claude Code session data
+.claude/
