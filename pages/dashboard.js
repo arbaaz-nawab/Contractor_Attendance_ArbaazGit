@@ -314,7 +314,7 @@ function PinGate({ onUnlock }) {
 }
 
 // ── Amend contractor record modal ─────────────────────────────────────────────
-function AmendModal({ record, onConfirm, onCancel }) {
+function AmendModal({ record, onConfirm, onCancel, managers = MANAGERS }) {
   const [managerName, setManagerName] = useState('');
   const [pin,         setPin]         = useState('');
   const [fields, setFields] = useState({
@@ -419,7 +419,7 @@ function AmendModal({ record, onConfirm, onCancel }) {
           <label>Your name (manager) *</label>
           <select value={managerName} onChange={(e) => setManagerName(e.target.value)}>
             <option value="">— Select —</option>
-            {MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
+            {managers.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
         <div className="form-group">
@@ -460,7 +460,7 @@ function AmendModal({ record, onConfirm, onCancel }) {
 }
 
 // ── Amend engineer overtime modal ─────────────────────────────────────────────
-function AmendOvertimeModal({ record, onConfirm, onCancel }) {
+function AmendOvertimeModal({ record, onConfirm, onCancel, managers = MANAGERS }) {
   const parsed = parseDurationHM(record.adjustedDuration || record.duration || '');
   const [managerName, setManagerName] = useState('');
   const [pin,         setPin]         = useState('');
@@ -581,7 +581,7 @@ function AmendOvertimeModal({ record, onConfirm, onCancel }) {
           <label>Your name (manager) *</label>
           <select value={managerName} onChange={(e) => setManagerName(e.target.value)}>
             <option value="">— Select —</option>
-            {MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
+            {managers.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
         <div className="form-group">
@@ -622,7 +622,7 @@ function AmendOvertimeModal({ record, onConfirm, onCancel }) {
 }
 
 // ── Force sign-out modal (manager override for overdue active sessions) ───────
-function ForceSignOutModal({ record, onConfirm, onCancel }) {
+function ForceSignOutModal({ record, onConfirm, onCancel, managers = MANAGERS }) {
   // Default sign-out time: today 18:00 UK
   const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' }); // YYYY-MM-DD
   const [managerName, setManagerName] = useState('');
@@ -682,7 +682,7 @@ function ForceSignOutModal({ record, onConfirm, onCancel }) {
           <label>Your name (manager) *</label>
           <select value={managerName} onChange={(e) => setManagerName(e.target.value)}>
             <option value="">— Select —</option>
-            {MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
+            {managers.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
         <div className="form-group">
@@ -705,7 +705,7 @@ function ForceSignOutModal({ record, onConfirm, onCancel }) {
 }
 
 // ── Delete compliance record modal ────────────────────────────────────────────
-function DeleteComplianceModal({ companyName, onConfirm, onCancel }) {
+function DeleteComplianceModal({ companyName, onConfirm, onCancel, managers = MANAGERS }) {
   const [managerName, setManagerName] = useState('');
   const [pin,         setPin]         = useState('');
   const [error,       setError]       = useState('');
@@ -744,7 +744,7 @@ function DeleteComplianceModal({ companyName, onConfirm, onCancel }) {
           <label>Your name (manager) *</label>
           <select value={managerName} onChange={(e) => setManagerName(e.target.value)}>
             <option value="">— Select —</option>
-            {MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
+            {managers.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
         <div className="form-group">
@@ -873,6 +873,9 @@ export default function Dashboard() {
   const [error,    setError]    = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
 
+  // Dynamic manager list (fetched from Supabase, falls back to config)
+  const [managersList, setManagersList] = useState(MANAGERS);
+
   // Amend / force sign-out state
   const [amendModal,        setAmendModal]        = useState(null);
   const [amendMessage,      setAmendMessage]      = useState('');
@@ -968,6 +971,14 @@ export default function Dashboard() {
     } catch { setComplianceError('Failed to load compliance data.'); }
     finally { setComplianceLoading(false); }
   }, []);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    fetch('/api/managers')
+      .then((r) => r.json())
+      .then((d) => { if (d.success && d.names.length) setManagersList(d.names); })
+      .catch(() => {});
+  }, [unlocked]);
 
   useEffect(() => {
     if (!unlocked) return;
@@ -1155,6 +1166,7 @@ export default function Dashboard() {
             fetchComplianceData();
           }}
           onCancel={() => setDeleteComplianceModal(null)}
+          managers={managersList}
         />
       )}
 
@@ -1173,6 +1185,7 @@ export default function Dashboard() {
           record={amendModal}
           onConfirm={handleAmendConfirm}
           onCancel={() => setAmendModal(null)}
+          managers={managersList}
         />
       )}
 
@@ -1181,6 +1194,7 @@ export default function Dashboard() {
           record={amendOvertimeModal}
           onConfirm={handleAmendOvertimeConfirm}
           onCancel={() => setAmendOvertimeModal(null)}
+          managers={managersList}
         />
       )}
 
@@ -1189,6 +1203,7 @@ export default function Dashboard() {
           record={forceSignOutModal}
           onConfirm={handleForceSignOutConfirm}
           onCancel={() => setForceSignOutModal(null)}
+          managers={managersList}
         />
       )}
 
@@ -1283,7 +1298,7 @@ export default function Dashboard() {
               <select value={currentManager}
                 onChange={(e) => { setCurrentManager(e.target.value); setApprovalMessage(''); }}>
                 <option value="">— Select your name —</option>
-                {MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
+                {managersList.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
             <button className="btn btn--secondary btn--sm" onClick={fetchOvertimeData} disabled={overtimeLoading}>
