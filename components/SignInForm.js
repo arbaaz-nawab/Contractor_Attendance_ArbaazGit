@@ -212,14 +212,16 @@ export default function SignInForm() {
     if (!f.contactNumber.trim())
       return 'Please enter a contact number.';
     {
-      const digits = f.contactNumber.trim().replace(/\s/g, '');
-      if (!/^\d+$/.test(digits))
-        return 'Contact number must contain digits only.';
-      if (digits.startsWith('0')) {
-        if (digits.length !== 11)
+      const raw = f.contactNumber.trim().replace(/\s/g, '');
+      if (raw.startsWith('+44')) {
+        const after = raw.slice(3);
+        if (!/^\d{10}$/.test(after))
+          return 'Numbers starting with +44 must be followed by 10 digits (e.g. +44 7700 900000).';
+      } else if (raw.startsWith('0')) {
+        if (!/^\d{11}$/.test(raw))
           return 'UK numbers starting with 0 must be 11 digits (e.g. 07700 900000).';
       } else {
-        if (digits.length !== 10)
+        if (!/^\d{10}$/.test(raw))
           return 'Contact number must be 10 digits.';
       }
     }
@@ -376,7 +378,7 @@ export default function SignInForm() {
             type="tel"
             value={f.contactNumber}
             onChange={(e) => set('contactNumber', e.target.value)}
-            placeholder="e.g. 07700 900000"
+            placeholder="e.g. 07700 900000 or +44 7700 900000"
             autoComplete="tel"
           />
         </div>
