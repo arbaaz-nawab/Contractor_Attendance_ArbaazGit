@@ -68,6 +68,22 @@ export default async function handler(req, res) {
       });
     }
 
+    // ── Force sign-out (close active session, set sign-out time + status) ─────
+    if (action === 'forceSignOut') {
+      const outTime = signOutTime || ukDateTimeString();
+      await updateRow(Number(rowId), {
+        'Sign-Out Time':  outTime,
+        'Status':         'Completed',
+        'Work Completed': workCompleted || 'Session closed by manager override',
+        'Amended By':     managerName,
+        'Amended At':     ukDateTimeString(),
+      });
+      return res.status(200).json({
+        success: true,
+        message: `${record['Operative Name']} force-signed out by ${managerName}.`,
+      });
+    }
+
     // ── Build update payload — only include fields that were supplied ─────────
     const updates = {
       'Amended By': managerName,

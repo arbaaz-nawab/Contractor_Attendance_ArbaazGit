@@ -122,3 +122,6 @@ ALTER TABLE engineer_overtime ADD COLUMN IF NOT EXISTS dean_approval_timestamp  
 ALTER TABLE engineer_overtime ADD COLUMN IF NOT EXISTS laurel_approval_timestamp TEXT;
 
 -- operative_induction table (idempotent via CREATE TABLE IF NOT EXISTS above)
+
+-- managers: email column for overdue notifications
+ALTER TABLE managers ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';

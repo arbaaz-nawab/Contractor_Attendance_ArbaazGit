@@ -621,6 +621,89 @@ function AmendOvertimeModal({ record, onConfirm, onCancel }) {
   );
 }
 
+// ── Force sign-out modal (manager override for overdue active sessions) ───────
+function ForceSignOutModal({ record, onConfirm, onCancel }) {
+  // Default sign-out time: today 18:00 UK
+  const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' }); // YYYY-MM-DD
+  const [managerName, setManagerName] = useState('');
+  const [pin,         setPin]         = useState('');
+  const [signOutTime, setSignOutTime] = useState(`${todayLocal}T18:00`);
+  const [notes,       setNotes]       = useState('');
+  const [error,       setError]       = useState('');
+  const [loading,     setLoading]     = useState(false);
+
+  async function handleConfirm() {
+    if (!managerName) { setError('Please select your manager name.'); return; }
+    if (!pin)         { setError('Please enter your PIN.'); return; }
+    setLoading(true); setError('');
+    try {
+      const outTs = signOutTime ? signOutTime.replace('T', ' ') + ':00' : undefined;
+      const res  = await fetch('/api/amend-contractor', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rowId:        record._row,
+          managerName,
+          pin,
+          action:       'forceSignOut',
+          signOutTime:  outTs,
+          workCompleted: notes.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) onConfirm(data.message);
+      else { setError(data.message || 'Failed. Please try again.'); setPin(''); }
+    } catch { setError('Network error. Please try again.'); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div className="card" style={{ maxWidth: 420, width: '90%', margin: 0 }}>
+        <p className="card__title" style={{ color: '#b91c1c' }}>Force Sign-Out — {record.operativeName}</p>
+        <p className="text-sm text-muted" style={{ marginBottom: 12 }}>
+          {record.companyName} · Signed in at {fmtTime(record.signInTime)}
+        </p>
+
+        {error && <div className="alert alert--error">{error}</div>}
+
+        <div className="form-group">
+          <label>Sign-out time</label>
+          <input type="datetime-local" value={signOutTime}
+            onChange={(e) => setSignOutTime(e.target.value)} />
+          <span className="field-hint">Adjust if the actual departure time differs from now</span>
+        </div>
+        <div className="form-group">
+          <label>Notes <span className="text-muted text-sm">(optional)</span></label>
+          <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)}
+            placeholder="e.g. Left site at 18:00, no response to calls" />
+        </div>
+        <div className="form-group">
+          <label>Your name (manager) *</label>
+          <select value={managerName} onChange={(e) => setManagerName(e.target.value)}>
+            <option value="">— Select —</option>
+            {MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Manager PIN *</label>
+          <input type="password" inputMode="numeric" value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleConfirm()}
+            placeholder="Enter PIN" maxLength={20} />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn--danger" onClick={handleConfirm} disabled={loading}>
+            {loading && <span className="spinner" />}
+            {loading ? 'Closing Session…' : 'Force Sign-Out'}
+          </button>
+          <button className="btn btn--secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Approval PIN modal ────────────────────────────────────────────────────────
 function ApprovalModal({ target, action, managerName, onConfirm, onCancel }) {
   const parsed = parseDurationHM(target.duration || '');
@@ -728,9 +811,13 @@ export default function Dashboard() {
   const [error,    setError]    = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
 
-  // Amend contractor state
-  const [amendModal,   setAmendModal]   = useState(null);
-  const [amendMessage, setAmendMessage] = useState('');
+  // Amend / force sign-out state
+  const [amendModal,        setAmendModal]        = useState(null);
+  const [amendMessage,      setAmendMessage]      = useState('');
+  const [forceSignOutModal, setForceSignOutModal] = useState(null);
+  const [forceSignOutMsg,   setForceSignOutMsg]   = useState('');
+  const [notifyLoading,     setNotifyLoading]     = useState(false);
+  const [notifyMsg,         setNotifyMsg]         = useState('');
 
   // Amend overtime state
   const [amendOvertimeModal,   setAmendOvertimeModal]   = useState(null);
@@ -836,6 +923,11 @@ export default function Dashboard() {
     return <PinGate onUnlock={() => setUnlocked(true)} />;
   }
 
+  // ── Derived: is it past 18:00 UK time? ──────────────────────────────────────
+  const isPast6PM = Number(
+    new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Europe/London' }).format(new Date())
+  ) >= 18;
+
   // ── Derived: approvals (dual approval — each manager sees what they haven't approved) ──
   const pendingForManager = (overtimeData || []).filter((r) => {
     if (!currentManager) return false;
@@ -898,6 +990,12 @@ export default function Dashboard() {
     setAmendOvertimeModal(null);
     setAmendOvertimeMessage(message);
     fetchOvertimeData();
+  }
+
+  function handleForceSignOutConfirm(message) {
+    setForceSignOutModal(null);
+    setForceSignOutMsg(message);
+    fetchData();
   }
 
   // ── CSV export for monthly summary ───────────────────────────────────────────
@@ -1011,6 +1109,14 @@ export default function Dashboard() {
         />
       )}
 
+      {forceSignOutModal && (
+        <ForceSignOutModal
+          record={forceSignOutModal}
+          onConfirm={handleForceSignOutConfirm}
+          onCancel={() => setForceSignOutModal(null)}
+        />
+      )}
+
       <div className="mb-2" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Link href="/" style={{ color: '#6b7280', fontSize: '0.875rem' }}>← Back to Sign In/Out</Link>
         <button
@@ -1035,6 +1141,8 @@ export default function Dashboard() {
                 setComplianceMsg('');
                 setAmendMessage('');
                 setAmendOvertimeMessage('');
+                setForceSignOutMsg('');
+                setNotifyMsg('');
               }}
             >
               {t.label}
@@ -1057,6 +1165,30 @@ export default function Dashboard() {
               onChange={(e) => setCompany(e.target.value)} />
             <button className="btn btn--secondary btn--sm" onClick={fetchData} disabled={loading}>
               {loading ? 'Refreshing...' : 'Refresh'}
+            </button>
+            <button
+              className="btn btn--secondary btn--sm"
+              style={{ borderColor: '#b91c1c', color: '#b91c1c' }}
+              disabled={notifyLoading}
+              onClick={async () => {
+                setNotifyLoading(true); setNotifyMsg('');
+                try {
+                  const res  = await fetch('/api/trigger-notify', { method: 'POST' });
+                  const json = await res.json();
+                  if (json.success) {
+                    setNotifyMsg(
+                      json.overdueCount === 0
+                        ? 'No active contractors on site — no email sent.'
+                        : `Alert sent to ${json.sent} manager(s) — ${json.overdueCount} overdue contractor(s).`
+                    );
+                  } else {
+                    setNotifyMsg('error:' + (json.message || 'Failed to send notification.'));
+                  }
+                } catch { setNotifyMsg('error:Network error.'); }
+                finally { setNotifyLoading(false); }
+              }}
+            >
+              {notifyLoading ? 'Sending…' : 'Send Overdue Alert'}
             </button>
           </div>
         )}
@@ -1133,8 +1265,14 @@ export default function Dashboard() {
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {dashTab === 'contractors' && (
         <>
-          {error        && <div className="alert alert--error">{error}</div>}
-          {amendMessage && <div className="alert alert--success">{amendMessage}</div>}
+          {error           && <div className="alert alert--error">{error}</div>}
+          {amendMessage    && <div className="alert alert--success">{amendMessage}</div>}
+          {forceSignOutMsg && <div className="alert alert--success">{forceSignOutMsg}</div>}
+          {notifyMsg && (
+            <div className={`alert alert--${notifyMsg.startsWith('error:') ? 'error' : 'success'}`}>
+              {notifyMsg.startsWith('error:') ? notifyMsg.slice(6) : notifyMsg}
+            </div>
+          )}
 
           {data && (
             <>
@@ -1166,22 +1304,47 @@ export default function Dashboard() {
                       <thead>
                         <tr>
                           <th>ID</th><th>Name</th><th>Company</th><th>Signed In</th>
-                          <th>Contact No.</th><th>Building(s)</th><th>Point of Contact</th><th>Status</th>
+                          <th>Contact No.</th><th>Building(s)</th><th>Point of Contact</th>
+                          <th>Status</th><th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {data.active.map((row, i) => (
-                          <tr key={i}>
-                            <td>{row.id}</td>
-                            <td><strong>{row.operativeName}</strong></td>
-                            <td>{row.companyName}</td>
-                            <td>{fmtTime(row.signInTime)}</td>
-                            <td>{row.contactNumber  || <span className="text-muted">—</span>}</td>
-                            <td>{row.buildings      || <span className="text-muted">—</span>}</td>
-                            <td>{row.pointOfContact || <span className="text-muted">—</span>}</td>
-                            <td><span className="badge badge--active">Active</span></td>
-                          </tr>
-                        ))}
+                        {data.active.map((row, i) => {
+                          const overdue = isPast6PM;
+                          return (
+                            <tr key={i} style={overdue ? { background: '#fef2f2' } : undefined}>
+                              <td>{row.id}</td>
+                              <td><strong>{row.operativeName}</strong></td>
+                              <td>{row.companyName}</td>
+                              <td>{fmtTime(row.signInTime)}</td>
+                              <td>{row.contactNumber  || <span className="text-muted">—</span>}</td>
+                              <td>{row.buildings      || <span className="text-muted">—</span>}</td>
+                              <td>{row.pointOfContact || <span className="text-muted">—</span>}</td>
+                              <td>
+                                <span className="badge badge--active">Active</span>
+                                {overdue && (
+                                  <span style={{
+                                    marginLeft: 6, fontSize: '0.75rem', fontWeight: 700,
+                                    color: '#b91c1c', background: '#fee2e2',
+                                    padding: '2px 6px', borderRadius: 4,
+                                  }}>
+                                    Overdue
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                {overdue && (
+                                  <button
+                                    className="btn btn--danger btn--sm"
+                                    onClick={() => { setForceSignOutMsg(''); setForceSignOutModal(row); }}
+                                  >
+                                    Force Sign-Out
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
