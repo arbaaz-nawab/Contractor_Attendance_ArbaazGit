@@ -704,6 +704,68 @@ function ForceSignOutModal({ record, onConfirm, onCancel }) {
   );
 }
 
+// ── Delete compliance record modal ────────────────────────────────────────────
+function DeleteComplianceModal({ companyName, onConfirm, onCancel }) {
+  const [managerName, setManagerName] = useState('');
+  const [pin,         setPin]         = useState('');
+  const [error,       setError]       = useState('');
+  const [loading,     setLoading]     = useState(false);
+
+  async function handleDelete() {
+    if (!managerName) { setError('Please select your manager name.'); return; }
+    if (!pin)         { setError('Please enter your PIN.'); return; }
+    setLoading(true); setError('');
+    try {
+      const res  = await fetch('/api/compliance-delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyName, managerName, pin }),
+      });
+      const data = await res.json();
+      if (data.success) onConfirm(data.message);
+      else { setError(data.message || 'Failed. Please try again.'); setPin(''); }
+    } catch { setError('Network error. Please try again.'); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div className="card" style={{ maxWidth: 420, width: '90%', margin: 0 }}>
+        <p className="card__title" style={{ color: '#b91c1c' }}>Delete Compliance Record</p>
+        <p className="text-sm text-muted" style={{ marginBottom: 12 }}>{companyName}</p>
+
+        <div className="alert alert--error" style={{ marginBottom: 12 }}>
+          This will permanently delete all compliance dates for this company. Files in storage are not deleted.
+        </div>
+
+        {error && <div className="alert alert--error">{error}</div>}
+
+        <div className="form-group">
+          <label>Your name (manager) *</label>
+          <select value={managerName} onChange={(e) => setManagerName(e.target.value)}>
+            <option value="">— Select —</option>
+            {MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Manager PIN *</label>
+          <input type="password" inputMode="numeric" value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleDelete()}
+            placeholder="Enter PIN" maxLength={20} autoFocus />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn--danger" onClick={handleDelete} disabled={loading}>
+            {loading && <span className="spinner" />}
+            {loading ? 'Deleting…' : 'Confirm Delete'}
+          </button>
+          <button className="btn btn--secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Approval PIN modal ────────────────────────────────────────────────────────
 function ApprovalModal({ target, action, managerName, onConfirm, onCancel }) {
   const parsed = parseDurationHM(target.duration || '');
@@ -846,6 +908,7 @@ export default function Dashboard() {
   const [complianceMsg,        setComplianceMsg]        = useState('');
   const [complianceSubmitting, setComplianceSubmitting] = useState(false);
   const [filesModalCompany,    setFilesModalCompany]    = useState(null);
+  const [deleteComplianceModal, setDeleteComplianceModal] = useState(null);
   const [compForm, setCompForm] = useState({
     companyName: '', ramsDate: '', inductionDate: '', insuranceDate: '',
   });
@@ -1080,6 +1143,18 @@ export default function Dashboard() {
         <ComplianceFilesModal
           companyName={filesModalCompany}
           onClose={() => setFilesModalCompany(null)}
+        />
+      )}
+
+      {deleteComplianceModal && (
+        <DeleteComplianceModal
+          companyName={deleteComplianceModal}
+          onConfirm={(msg) => {
+            setDeleteComplianceModal(null);
+            setComplianceMsg('success:' + msg);
+            fetchComplianceData();
+          }}
+          onCancel={() => setDeleteComplianceModal(null)}
         />
       )}
 
@@ -1860,12 +1935,20 @@ export default function Dashboard() {
                           </td>
                           <td><ComplianceBadge status={row.complianceStatus} /></td>
                           <td>
-                            <button
-                              className="btn btn--secondary btn--sm"
-                              onClick={() => setFilesModalCompany(row.companyName)}
-                            >
-                              Files
-                            </button>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button
+                                className="btn btn--secondary btn--sm"
+                                onClick={() => setFilesModalCompany(row.companyName)}
+                              >
+                                Files
+                              </button>
+                              <button
+                                className="btn btn--danger btn--sm"
+                                onClick={() => setDeleteComplianceModal(row.companyName)}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </td>
                           <td style={{ fontSize: '0.8rem', color: '#6b7280' }}>
                             {row.updatedBy || <span className="text-muted">—</span>}
