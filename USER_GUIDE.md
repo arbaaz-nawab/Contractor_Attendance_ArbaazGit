@@ -9,7 +9,7 @@ A web app for Goodenough College Estates staff that:
 - Lets **contractors** sign in and out when visiting site
 - Captures **Health & Safety** checks (RAMS, permits, asbestos, induction, insurance)
 - Lets **Goodenough College staff** log and get overtime approved
-- Gives **managers** a dashboard to see who is on site, view attendance history, manage compliance records and approve overtime
+- Gives **managers** a dashboard to see who is on site, view attendance history, manage compliance records, approve overtime, and receive email alerts for overdue contractors
 
 ---
 
@@ -22,7 +22,7 @@ Go to the **main page** (`/`).
 1. Tap **Contractor**
 2. Select your **company name** (or type it under "Other")
 3. Wait for the compliance check (green = returning, amber = first visit or expired compliance)
-4. Fill in your **operative name**, **contact number**, **3-digit ID** (from your ID card)
+4. Fill in your **operative name** (autocomplete will suggest returning operatives), **contact number** (UK format: `07700 900000` or `+44 7700 900000`), **3-digit ID** (from your ID card)
 5. Select the **building(s)** you're working in and your **point of contact**
 6. Answer the **Health & Safety questions** (permits, fire safety, asbestos, RAMS, induction, insurance)
 7. Tick the **declaration** and tap **Sign In**
@@ -54,23 +54,30 @@ Go to the **main page** (`/`) and tap **Goodenough College Staff**.
 ### 3. Manager (Dashboard)
 Go to `/dashboard` (there is a small link at the bottom of the main page).
 
-Enter the **dashboard PIN** (default: `4321` — change this in Vercel env vars).
+Enter the **dashboard PIN** (set via `DASHBOARD_PIN` in Vercel environment variables).
 
 **Dashboard tabs:**
 
 | Tab | What it shows |
 |-----|---------------|
-| **Contractors** | Who is currently on site + completed visits. Filter by date range and company. |
-| **Overtime** | All engineer overtime sessions. |
-| **Approvals** | Pending overtime records for your team. Approve or reject using your manager PIN. |
-| **Monthly Summary** | Hours summary per engineer for any month. |
-| **Compliance** | RAMS, induction and insurance dates per company. Upload compliance documents. |
+| **Contractors** | Who is currently on site + completed visits. Filter by date range and company. Overdue contractors (past 18:00) are highlighted in red. |
+| **Overtime** | All engineer overtime sessions. Amend or delete records with manager PIN. |
+| **Approvals** | Pending overtime records awaiting your approval. Approve or reject using your manager PIN. |
+| **Monthly Summary** | Hours summary per engineer for any month or date range. Export to CSV. |
+| **Compliance** | RAMS, induction and insurance dates per company. Upload, view and delete compliance documents. |
 
-**Manager PINs** (set in Vercel env vars under `MANAGER_PINS`):
-- Arbaaz Nawab: 9999
-- Dean Marsh: 1212
-- Frankie Sheekey: 7777
-- Laurel Anderson: 6666
+**Overdue contractor alerts:**
+- After 18:00, active contractors on site are highlighted red with an **Overdue** badge
+- Click **Force Sign-Out** on any overdue row to close their session (requires manager PIN)
+- Click **Send Overdue Alert** in the filter bar to manually email all managers
+- An automatic email is also sent every weekday at 18:00 UK time via Vercel Cron
+
+**Amending and deleting records:**
+- In the **Contractors** tab, each signed-out record has an **Amend** button — edit work notes, sign-out time, contact details, or delete the entry entirely (requires manager PIN)
+- In the **Overtime** tab, each record has an **Amend / Delete** button (requires manager PIN)
+- In the **Compliance** tab, each company row has a **Delete** button (requires manager PIN)
+
+**Manager PINs** are stored in the Supabase `managers` table — see [Managing Managers](#managing-managers) below. Do not write PINs in this document.
 
 ---
 
@@ -82,7 +89,7 @@ Enter the **dashboard PIN** (default: `4321` — change this in Vercel env vars)
 | Site Induction | 12 months from last confirmation |
 | Insurance | 12 months from last confirmation |
 
-When a contractor's compliance expires (or it's their first visit), the sign-in form automatically shows extra H&S questions.
+When a contractor's compliance expires (or it is their first visit), the sign-in form automatically shows extra H&S questions.
 
 ---
 
@@ -94,10 +101,10 @@ Before deploying, run the SQL schema in your Supabase project:
 2. Open the file `supabase-schema.sql` from this project
 3. Paste it all in and click **Run**
 
-This creates four tables and a private storage bucket:
+This creates the following tables and a private storage bucket:
 - `contractor_log` — all sign-in/out records
 - `engineer_overtime` — staff overtime sessions
-- `managers` — manager names and PINs (optional, env vars work too)
+- `managers` — manager names, PINs and email addresses
 - `contractor_compliance` — company compliance dates
 - `compliance-docs` storage bucket — uploaded PDF/image documents
 
@@ -109,48 +116,41 @@ This creates four tables and a private storage bucket:
 
 1. Open **GitHub Desktop**
 2. Click **Add an Existing Repository from your Hard Drive**
-3. Browse to: `C:\Users\arbaaz.nawab\OneDrive - Goodenough College\contractor attendance\Contractor_attendance-main`
-4. Click **Add Repository** (or **Create Repository** if prompted)
-5. Click **Publish repository** → uncheck "Keep this code private" if you want, or leave it private
-6. Click **Publish Repository**
+3. Browse to the project folder and click **Add Repository**
+4. Click **Publish repository**
 
 ### Step 2 — Deploy on Vercel
 
 1. Go to [vercel.com](https://vercel.com) and sign in with your GitHub account
 2. Click **Add New → Project**
-3. Find and select your GitHub repo (`Contractor_attendance-main` or similar)
-4. Click **Import**
-5. Framework will auto-detect as **Next.js** — leave all settings as-is
-6. Click **Environment Variables** and add the following:
-
-| Variable | Value |
-|----------|-------|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://caiyqhnbztxbnobmdapj.supabase.co` |
-| `SUPABASE_ANON_KEY` | *(your anon key — see .env.local)* |
-| `DASHBOARD_PIN` | `1234` (or choose your own) |
-| `MANAGER_PINS` | `Arbaaz Nawab:9999,Dean Marsh:1212,Frankie Sheekey:7777,Laurel Anderson:6666,Sarfraz Arfan:5555` |
-| `NEXT_PUBLIC_APP_TITLE` | `Estates Contractor Log` |
-| `CF_ACCOUNT_ID` | *(only if using Cloudflare R2 for photos — optional)* |
-| `CF_R2_ACCESS_KEY_ID` | *(optional)* |
-| `CF_R2_SECRET_ACCESS_KEY` | *(optional)* |
-| `CF_R2_BUCKET` | `contractor-photos` *(optional)* |
-
-7. Click **Deploy**
-8. Wait ~2 minutes — Vercel will give you a URL like `https://contractor-attendance-xxx.vercel.app`
+3. Find and select your GitHub repo
+4. Click **Import** — framework will auto-detect as **Next.js**
+5. Add the environment variables listed below
+6. Click **Deploy**
+7. Wait ~2 minutes for the URL to go live
 
 ### Step 3 — Optional: Custom Domain
 
 In Vercel → your project → **Settings → Domains** → add your own domain.
 
+### Step 4 — Disable Deployment Protection
+
+By default Vercel requires visitors to log in. To make the site publicly accessible:
+
+1. Vercel → your project → **Settings → Deployment Protection**
+2. Set to **None** and save
+
 ---
 
 ## Updating the App
 
-Whenever you make changes:
-1. Open **GitHub Desktop**
-2. Review the changed files, write a short summary, click **Commit to main**
-3. Click **Push origin**
-4. Vercel automatically redeploys within ~2 minutes
+Whenever you make code changes:
+```
+git add .
+git commit -m "describe your change"
+git push origin main
+```
+Vercel automatically redeploys within ~2 minutes.
 
 ---
 
@@ -161,9 +161,12 @@ Whenever you make changes:
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Your Supabase project URL |
 | `SUPABASE_ANON_KEY` | Yes | Supabase anon/public key |
 | `DASHBOARD_PIN` | Yes | PIN to access the manager dashboard |
-| `MANAGER_PINS` | Yes | Comma-separated `Name:PIN` pairs for overtime approval |
+| `RESEND_API_KEY` | Yes (for email alerts) | API key from resend.com |
+| `RESEND_FROM` | Yes (for email alerts) | Sender address e.g. `alerts@yourdomain.com` or `onboarding@resend.dev` |
+| `CRON_SECRET` | Yes (for email alerts) | Any random string — protects the cron endpoint |
 | `NEXT_PUBLIC_APP_TITLE` | No | App title shown in the browser tab |
-| `APPROVAL_PIN` | No | Universal fallback PIN for overtime approval |
+| `MANAGER_PINS` | No | Fallback if Supabase managers table is empty. Format: `Name:PIN,Name:PIN` |
+| `APPROVAL_PIN` | No | Universal fallback PIN for all managers |
 | `CF_ACCOUNT_ID` | No | Cloudflare account ID (for R2 photo uploads) |
 | `CF_R2_ACCESS_KEY_ID` | No | Cloudflare R2 access key |
 | `CF_R2_SECRET_ACCESS_KEY` | No | Cloudflare R2 secret key |
@@ -171,14 +174,31 @@ Whenever you make changes:
 
 ---
 
-## Adding or Removing Engineers / Managers
+## Managing Managers
+
+Managers are stored in the **Supabase `managers` table** with three columns:
+
+| Column | Description |
+|--------|-------------|
+| `manager_name` | Full name — must match exactly what appears in dropdowns |
+| `manager_pin` | The manager's individual PIN for approvals and amendments |
+| `email` | Email address for overdue contractor alerts (optional) |
+
+To add a new manager:
+1. Go to Supabase → **Table Editor** → `managers`
+2. Insert a new row with their name, PIN and email
+3. The manager will appear in all dropdowns immediately — no code change or redeploy needed
+
+To change a PIN: edit the `manager_pin` value directly in the table.
+
+---
+
+## Adding or Removing Engineers
 
 Edit [lib/config.js](lib/config.js):
 - `ENGINEERS` — list of staff names shown in the overtime sign-in form
-- `MANAGERS` — list of managers shown in the overtime approval dropdown
-- `ENGINEER_MANAGER_MAP` — which manager approves each engineer's overtime
 
-After editing, commit and push via GitHub Desktop — Vercel redeploys automatically.
+After editing, commit and push — Vercel redeploys automatically.
 
 ---
 
@@ -191,7 +211,7 @@ Edit [components/SignInForm.js](components/SignInForm.js) — find the `COMPANIE
 ## Frequently Asked Questions
 
 **A contractor can't sign in — it says "already signed in today"**
-They must sign out first using their 3-digit ID, or a manager can check the dashboard.
+They must sign out first using their 3-digit ID, or a manager can use the dashboard to force sign-out.
 
 **What is the 3-digit ID?**
 It is the number printed on the contractor's physical ID card. It identifies a person uniquely for that day. Range: 001–999.
@@ -203,10 +223,26 @@ No — only one active session per ID per day is allowed.
 If Cloudflare R2 is configured, photos are uploaded there and a link is stored in the database. If R2 is not configured, no photo is stored but sign-out still works.
 
 **Where are compliance documents stored?**
-In Supabase Storage (private bucket: `compliance-docs`). Files are accessible to managers via the Compliance tab.
+In Supabase Storage (private bucket: `compliance-docs`). Files are accessible to managers via the Compliance tab → Files button.
 
 **How do I change the dashboard PIN?**
 Update `DASHBOARD_PIN` in Vercel → your project → Settings → Environment Variables, then redeploy.
 
+**How do I change a manager's PIN?**
+Edit the `manager_pin` value directly in the Supabase `managers` table. No redeploy needed.
+
+**Why did I get "Alert sent to 0 manager(s)"?**
+The `email` column in the Supabase `managers` table is empty. Add email addresses to each manager row.
+
+**The overdue email is not arriving**
+Check: (1) `RESEND_API_KEY`, `RESEND_FROM` and `CRON_SECRET` are set in Vercel env vars and the project has been redeployed. (2) Manager email addresses are filled in the Supabase `managers` table. (3) On Resend's free plan, emails can only be sent to the account owner's email — verify your domain to send to any address.
+
 **The app is deployed but shows a database error**
 Check that you ran `supabase-schema.sql` in your Supabase SQL Editor and that all environment variables are set correctly in Vercel.
+
+**Force Sign-Out shows a server error**
+Run this in Supabase SQL Editor to ensure the amend tracking columns exist:
+```sql
+ALTER TABLE contractor_log ADD COLUMN IF NOT EXISTS amended_by TEXT;
+ALTER TABLE contractor_log ADD COLUMN IF NOT EXISTS amended_at TEXT;
+```
