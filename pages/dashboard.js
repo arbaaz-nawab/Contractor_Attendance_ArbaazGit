@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from '../components/Layout';
 import Link from 'next/link';
 import { MANAGERS, APPROVERS } from '../lib/config';
+import * as XLSX from 'xlsx';
 
 // Format datetime for display: "09:30"
 function fmtTime(dt) {
@@ -1072,28 +1073,45 @@ export default function Dashboard() {
     fetchData();
   }
 
-  // ── CSV export for monthly summary ───────────────────────────────────────────
+  // ── Excel export for monthly summary (two sheets) ────────────────────────────
   function exportCsv() {
-    const headers = ['Engineer', 'Date', 'Start', 'End', 'Duration', 'Adjusted Duration', 'Work Description'];
-    const csvRows = approvedRecords.map((r) => [
-      r.engineerName,
-      fmtDate(r.startTimestamp),
-      fmtTime(r.startTimestamp),
-      fmtTime(r.endTimestamp),
-      r.duration,
-      r.adjustedDuration || r.duration,
-      r.workDescription || '',
-    ]);
-    const csv = [headers, ...csvRows]
-      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `overtime-${useDateRange ? `${summaryFrom}-to-${summaryTo}` : summaryMonth}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1 — Detailed Records
+    const detailRows = [
+      ['Engineer', 'Date', 'Start', 'End', 'Duration', 'Adjusted Duration', 'Work Description'],
+      ...approvedRecords.map((r) => [
+        r.engineerName,
+        fmtDate(r.startTimestamp),
+        fmtTime(r.startTimestamp),
+        fmtTime(r.endTimestamp),
+        r.duration,
+        r.adjustedDuration || r.duration,
+        r.workDescription || '',
+      ]),
+    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(detailRows);
+    ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, ws1, 'Detailed Records');
+
+    // Sheet 2 — Summary by Engineer
+    const summaryRows = [
+      ['Engineer', 'Total Sessions', 'Total Hours'],
+      ...Object.entries(summaryByEngineer)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, stats]) => [name, stats.sessions, formatHours(stats.totalHours)]),
+      [],
+      ['TOTAL',
+        Object.values(summaryByEngineer).reduce((s, v) => s + v.sessions, 0),
+        formatHours(Object.values(summaryByEngineer).reduce((s, v) => s + v.totalHours, 0)),
+      ],
+    ];
+    const ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
+    ws2['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
+
+    const filename = `overtime-${useDateRange ? `${summaryFrom}-to-${summaryTo}` : summaryMonth}.xlsx`;
+    XLSX.writeFile(wb, filename);
   }
 
   // ── Compliance form submit ────────────────────────────────────────────────────
