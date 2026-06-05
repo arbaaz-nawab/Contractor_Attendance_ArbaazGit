@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from '../components/Layout';
 import Link from 'next/link';
-import { MANAGERS } from '../lib/config';
+import { MANAGERS, APPROVERS } from '../lib/config';
 
 // Format datetime for display: "09:30"
 function fmtTime(dt) {
@@ -1298,7 +1298,7 @@ export default function Dashboard() {
               <select value={currentManager}
                 onChange={(e) => { setCurrentManager(e.target.value); setApprovalMessage(''); }}>
                 <option value="">— Select your name —</option>
-                {managersList.map((m) => <option key={m} value={m}>{m}</option>)}
+                {APPROVERS.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
             <button className="btn btn--secondary btn--sm" onClick={fetchOvertimeData} disabled={overtimeLoading}>
