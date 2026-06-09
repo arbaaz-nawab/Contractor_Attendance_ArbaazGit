@@ -13,14 +13,15 @@ export default function handler(req, res) {
   }
 
   const { pin } = req.body;
-  const correctPin = process.env.DASHBOARD_PIN;
+  const correctPin = (process.env.DASHBOARD_PIN || '').trim();
+
+  console.log('[check-pin] DASHBOARD_PIN set:', !!correctPin, '| length:', correctPin.length);
 
   if (!correctPin) {
-    // If no PIN is set, dashboard is open (useful during initial setup)
-    return res.status(200).json({ ok: true });
+    return res.status(503).json({ ok: false, message: 'DASHBOARD_PIN environment variable is not configured.' });
   }
 
-  if (!pin || String(pin) !== String(correctPin)) {
+  if (!pin || String(pin).trim() !== correctPin) {
     return res.status(401).json({ ok: false });
   }
 
