@@ -1140,13 +1140,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!unlocked || dashTab !== 'monthly') return;
-    const periodFrom = useDateRange ? summaryFrom : `${summaryMonth}-01`;
-    const periodTo   = useDateRange ? summaryTo : (() => {
+    const isRange = !!(summaryFrom && summaryTo);
+    const periodFrom = isRange ? summaryFrom : `${summaryMonth}-01`;
+    const periodTo   = isRange ? summaryTo : (() => {
       const d = new Date(summaryMonth + '-01'); d.setMonth(d.getMonth() + 1); d.setDate(0);
       return d.toISOString().split('T')[0];
     })();
     if (periodFrom && periodTo) fetchSummaryRota(periodFrom, periodTo);
-  }, [unlocked, dashTab, summaryMonth, summaryFrom, summaryTo, useDateRange, fetchSummaryRota]);
+  }, [unlocked, dashTab, summaryMonth, summaryFrom, summaryTo, fetchSummaryRota]);
 
   const fetchComplianceData = useCallback(async () => {
     setComplianceLoading(true); setComplianceError(null);
