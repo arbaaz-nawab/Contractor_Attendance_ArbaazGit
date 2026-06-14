@@ -24,6 +24,14 @@ function fmtDate(dt) {
   return d.toLocaleDateString('en-GB', { timeZone: 'Europe/London' });
 }
 
+// Format day of week for display: "Monday"
+function fmtDay(dt) {
+  if (!dt) return '-';
+  const d = new Date(dt);
+  if (isNaN(d)) return '-';
+  return d.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Europe/London' });
+}
+
 // Convert "Xh Ym" duration string to decimal hours
 function parseHours(durationStr) {
   if (!durationStr || durationStr === '-') return 0;
@@ -1259,10 +1267,11 @@ export default function Dashboard() {
 
       // Sheet 1 — Detailed Records
       const detailRows = [
-        ['Engineer', 'Date', 'Start', 'End', 'Duration', 'Adjusted Duration', 'Work Description'],
+        ['Engineer', 'Date', 'Day', 'Start', 'End', 'Duration', 'Adjusted Duration', 'Work Description'],
         ...approvedRecords.map((r) => [
           r.engineerName,
           fmtDate(r.startTimestamp),
+          fmtDay(r.startTimestamp),
           fmtTime(r.startTimestamp),
           fmtTime(r.endTimestamp),
           r.duration,
@@ -1271,7 +1280,7 @@ export default function Dashboard() {
         ]),
       ];
       const ws1 = XLSX.utils.aoa_to_sheet(detailRows);
-      ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 40 }];
+      ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 40 }];
       XLSX.utils.book_append_sheet(wb, ws1, 'Detailed Records');
 
       // Sheet 2 — Summary by Engineer + Weekly Duty Rota
@@ -1819,7 +1828,7 @@ export default function Dashboard() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Engineer</th><th>Date</th><th>Start</th><th>End</th>
+                      <th>Engineer</th><th>Date</th><th>Day</th><th>Start</th><th>End</th>
                       <th>Duration</th><th>Work Description</th>
                       <th>Status</th><th>Approval</th><th>Approved By</th><th>Image</th><th>Actions</th>
                     </tr>
@@ -1829,6 +1838,7 @@ export default function Dashboard() {
                       <tr key={i}>
                         <td><strong>{row.engineerName}</strong></td>
                         <td>{fmtDate(row.startTimestamp)}</td>
+                        <td>{fmtDay(row.startTimestamp)}</td>
                         <td>{fmtTime(row.startTimestamp)}</td>
                         <td>
                           {row.endTimestamp
@@ -1915,7 +1925,7 @@ export default function Dashboard() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Engineer</th><th>Date</th><th>Start</th><th>End</th>
+                          <th>Engineer</th><th>Date</th><th>Day</th><th>Start</th><th>End</th>
                           <th>Duration</th><th>Work Description</th>
                           <th>Status</th><th>Other Approver</th><th>Image</th><th>Actions</th>
                         </tr>
@@ -1929,6 +1939,7 @@ export default function Dashboard() {
                             <tr key={i}>
                               <td><strong>{row.engineerName}</strong></td>
                               <td>{fmtDate(row.startTimestamp)}</td>
+                              <td>{fmtDay(row.startTimestamp)}</td>
                               <td>{fmtTime(row.startTimestamp)}</td>
                               <td>{fmtTime(row.endTimestamp)}</td>
                               <td>{row.duration}</td>
@@ -1978,7 +1989,7 @@ export default function Dashboard() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Engineer</th><th>Date</th><th>Start</th><th>End</th>
+                          <th>Engineer</th><th>Date</th><th>Day</th><th>Start</th><th>End</th>
                           <th>Duration</th><th>Work Description</th>
                           <th>Overall Status</th><th>Your Approval</th><th>Image</th>
                         </tr>
@@ -1988,6 +1999,7 @@ export default function Dashboard() {
                           <tr key={i}>
                             <td><strong>{row.engineerName}</strong></td>
                             <td>{fmtDate(row.startTimestamp)}</td>
+                            <td>{fmtDay(row.startTimestamp)}</td>
                             <td>{fmtTime(row.startTimestamp)}</td>
                             <td>{fmtTime(row.endTimestamp)}</td>
                             <td>
