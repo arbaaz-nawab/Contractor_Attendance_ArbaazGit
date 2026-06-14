@@ -60,10 +60,11 @@ Enter the **dashboard PIN** (set via `DASHBOARD_PIN` in Vercel environment varia
 
 | Tab | What it shows |
 |-----|---------------|
-| **Contractors** | Who is currently on site + completed visits. Filter by date range and company. Overdue contractors (past 18:00) are highlighted in red. |
+| **Contractors** | Who is currently on site + completed visits, with date column. Filter by date range and company. Overdue contractors (past 18:00) are highlighted in red. |
 | **Overtime** | All engineer overtime sessions. Amend or delete records with manager PIN. |
 | **Approvals** | Pending overtime records awaiting your approval. Approve or reject using your manager PIN. |
-| **Monthly Summary** | Hours summary per engineer for any month or date range. Export to CSV. |
+| **Monthly Summary** | Hours summary per engineer for any month or date range. Export to Excel (3 sheets). |
+| **Weekly Rota** | Assign engineers to duty each week. Included as a sheet in the Monthly Summary Excel export. |
 | **Compliance** | RAMS, induction and insurance dates per company. Upload, view and delete compliance documents. |
 
 **Overdue contractor alerts:**
@@ -76,6 +77,13 @@ Enter the **dashboard PIN** (set via `DASHBOARD_PIN` in Vercel environment varia
 - In the **Contractors** tab, each signed-out record has an **Amend** button — edit work notes, sign-out time, contact details, or delete the entry entirely (requires manager PIN)
 - In the **Overtime** tab, each record has an **Amend / Delete** button (requires manager PIN)
 - In the **Compliance** tab, each company row has a **Delete** button (requires manager PIN)
+
+**Weekly Duty Rota:**
+- Go to the **Weekly Rota** tab and select a month
+- Each calendar week is listed with its date range and any assigned engineers
+- Click **Edit** on a week to open the assignment modal — tick engineers from the list, enter manager name and PIN, then save
+- Week start day can be switched between Sunday and Monday using the dropdown in the filter bar
+- When you export from **Monthly Summary**, the Excel file includes a **Weekly Duty Rota** sheet showing all weeks in the period with their assigned engineers
 
 **Manager PINs** are stored in the Supabase `managers` table — see [Managing Managers](#managing-managers) below. Do not write PINs in this document.
 

@@ -34,6 +34,7 @@ This creates all the required tables:
 - `engineer_overtime` — staff overtime sessions
 - `managers` — manager names, PINs and email addresses
 - `contractor_compliance` — company compliance dates
+- `weekly_rota` — engineer duty assignments per week
 - `compliance-docs` — private storage bucket for uploaded documents
 
 ### 1c. Get your API credentials
@@ -169,3 +170,4 @@ Vercel automatically redeploys within ~2 minutes.
 | Overdue emails not sending | Check `RESEND_API_KEY`, `RESEND_FROM`, `CRON_SECRET` are set and project redeployed. Add email addresses to the `managers` table in Supabase |
 | Force Sign-Out server error | Run in Supabase SQL Editor: `ALTER TABLE contractor_log ADD COLUMN IF NOT EXISTS amended_by TEXT; ALTER TABLE contractor_log ADD COLUMN IF NOT EXISTS amended_at TEXT;` |
 | Photos not uploading | Set `CF_ACCOUNT_ID`, `CF_R2_ACCESS_KEY_ID`, `CF_R2_SECRET_ACCESS_KEY`, `CF_R2_BUCKET` in Vercel env vars. Sign-out still works without photos. |
+| Weekly Rota tab shows error | Run in Supabase SQL Editor: `CREATE TABLE IF NOT EXISTS weekly_rota (id BIGSERIAL PRIMARY KEY, week_start_date TEXT NOT NULL, week_end_date TEXT NOT NULL, engineer_name TEXT NOT NULL, assigned_by TEXT, assigned_at TEXT); ALTER TABLE weekly_rota DISABLE ROW LEVEL SECURITY;` |
