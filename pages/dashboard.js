@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from '../components/Layout';
 import Link from 'next/link';
-import { MANAGERS, APPROVERS } from '../lib/config';
+import { MANAGERS, APPROVERS, ENGINEERS, WEEK_START_DAY } from '../lib/config';
 import * as XLSX from 'xlsx';
 
 // Format datetime for display: "09:30"
@@ -62,6 +62,41 @@ function ApprovalBadge({ status }) {
               : status === 'REJECTED' ? '#b91c1c'
               : '#92400e';
   return <span style={{ fontSize: '0.8rem', fontWeight: 600, color }}>{status}</span>;
+}
+
+// ── Weekly rota helpers ───────────────────────────────────────────────────────
+function getWeekNumber(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function getWeeksInRange(fromStr, toStr, weekStartDay = 0) {
+  const from = new Date(fromStr + 'T00:00:00');
+  const to   = new Date(toStr   + 'T23:59:59');
+  const weeks = [];
+  const cur = new Date(from);
+  cur.setDate(cur.getDate() - (cur.getDay() - weekStartDay + 7) % 7);
+  while (cur <= to) {
+    const ws = new Date(cur);
+    const we = new Date(cur); we.setDate(we.getDate() + 6);
+    weeks.push({
+      weekStartDate: ws.toISOString().split('T')[0],
+      weekEndDate:   we.toISOString().split('T')[0],
+      weekNumber:    getWeekNumber(ws.toISOString().split('T')[0]),
+    });
+    cur.setDate(cur.getDate() + 7);
+  }
+  return weeks;
+}
+
+function fmtWeekLabel(week) {
+  const s = new Date(week.weekStartDate + 'T00:00:00');
+  const e = new Date(week.weekEndDate   + 'T00:00:00');
+  const o1 = { weekday: 'short', day: 'numeric', month: 'short' };
+  const o2 = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
+  return `Week ${week.weekNumber} — ${s.toLocaleDateString('en-GB', o1)} to ${e.toLocaleDateString('en-GB', o2)}`;
 }
 
 // ── Compliance Files Modal ────────────────────────────────────────────────────
@@ -705,6 +740,93 @@ function ForceSignOutModal({ record, onConfirm, onCancel, managers = MANAGERS })
   );
 }
 
+// ── Weekly rota edit modal ────────────────────────────────────────────────────
+function RotaEditModal({ week, assignedEngineers, engineers, managers, onConfirm, onCancel }) {
+  const [selected,    setSelected]    = useState(new Set(assignedEngineers));
+  const [managerName, setManagerName] = useState('');
+  const [pin,         setPin]         = useState('');
+  const [error,       setError]       = useState('');
+  const [loading,     setLoading]     = useState(false);
+
+  function toggle(name) {
+    setSelected((prev) => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
+  }
+
+  async function handleSave() {
+    if (!managerName) { setError('Please select your manager name.'); return; }
+    if (!pin)         { setError('Please enter your PIN.'); return; }
+    setLoading(true); setError('');
+    try {
+      const res  = await fetch('/api/rota', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          weekStartDate: week.weekStartDate,
+          weekEndDate:   week.weekEndDate,
+          engineerNames: Array.from(selected),
+          managerName,
+          pin,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) onConfirm(data.message);
+      else { setError(data.message || 'Failed. Please try again.'); setPin(''); }
+    } catch { setError('Network error. Please try again.'); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div className="card" style={{ maxWidth: 480, width: '90%', margin: 0, maxHeight: '90vh', overflowY: 'auto' }}>
+        <p className="card__title">Edit Duty Rota</p>
+        <p className="text-sm text-muted" style={{ marginBottom: 12 }}>{fmtWeekLabel(week)}</p>
+
+        {error && <div className="alert alert--error">{error}</div>}
+
+        <div className="form-group">
+          <label>Engineers on duty this week</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+            {engineers.map((name) => (
+              <label key={name} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                  fontSize: '0.875rem', cursor: 'pointer', userSelect: 'none' }}>
+                <input type="checkbox" checked={selected.has(name)} onChange={() => toggle(name)} />
+                {name}
+              </label>
+            ))}
+          </div>
+          {selected.size === 0 && (
+            <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: 6 }}>
+              No engineers selected — saving will clear this week.
+            </p>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label>Your name (manager) *</label>
+          <select value={managerName} onChange={(e) => setManagerName(e.target.value)}>
+            <option value="">— Select —</option>
+            {managers.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Manager PIN *</label>
+          <input type="password" inputMode="numeric" value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+            placeholder="Enter PIN" maxLength={20} />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn--primary" onClick={handleSave} disabled={loading}>
+            {loading && <span className="spinner" />}
+            {loading ? 'Saving…' : 'Save'}
+          </button>
+          <button className="btn btn--secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Delete compliance record modal ────────────────────────────────────────────
 function DeleteComplianceModal({ companyName, onConfirm, onCancel, managers = MANAGERS }) {
   const [managerName, setManagerName] = useState('');
@@ -913,6 +1035,18 @@ export default function Dashboard() {
   const [complianceSubmitting, setComplianceSubmitting] = useState(false);
   const [filesModalCompany,    setFilesModalCompany]    = useState(null);
   const [deleteComplianceModal, setDeleteComplianceModal] = useState(null);
+
+  // Weekly Rota tab
+  const [rotaMonth,       setRotaMonth]       = useState(today.slice(0, 7));
+  const [rotaWeekStartDay, setRotaWeekStartDay] = useState(WEEK_START_DAY);
+  const [rotaData,        setRotaData]        = useState(null);
+  const [rotaLoading,     setRotaLoading]     = useState(false);
+  const [rotaError,       setRotaError]       = useState(null);
+  const [rotaMessage,     setRotaMessage]     = useState('');
+  const [rotaEditModal,   setRotaEditModal]   = useState(null);
+
+  // Monthly summary export loading
+  const [exportLoading, setExportLoading] = useState(false);
   const [compForm, setCompForm] = useState({
     companyName: '', ramsDate: '', inductionDate: '', insuranceDate: '',
   });
@@ -961,6 +1095,25 @@ export default function Dashboard() {
     } catch { setOvertimeError('Failed to load overtime data. Check your connection.'); }
     finally { setOvertimeLoading(false); }
   }, []);
+
+  const fetchRotaData = useCallback(async () => {
+    setRotaLoading(true); setRotaError(null);
+    try {
+      const d1 = new Date(rotaMonth + '-01'); d1.setDate(d1.getDate() - 7);
+      const d2 = new Date(rotaMonth + '-01'); d2.setMonth(d2.getMonth() + 1); d2.setDate(d2.getDate() + 6);
+      const from = d1.toISOString().split('T')[0];
+      const to   = d2.toISOString().split('T')[0];
+      const res  = await fetch(`/api/rota?from=${from}&to=${to}`);
+      const json = await res.json();
+      if (json.success) setRotaData(json.entries);
+      else setRotaError('Failed to load rota data.');
+    } catch { setRotaError('Network error.'); }
+    finally { setRotaLoading(false); }
+  }, [rotaMonth]);
+
+  useEffect(() => {
+    if (unlocked && dashTab === 'rota') fetchRotaData();
+  }, [unlocked, dashTab, rotaMonth, fetchRotaData]);
 
   const fetchComplianceData = useCallback(async () => {
     setComplianceLoading(true); setComplianceError(null);
@@ -1073,45 +1226,83 @@ export default function Dashboard() {
     fetchData();
   }
 
-  // ── Excel export for monthly summary (two sheets) ────────────────────────────
-  function exportCsv() {
-    const wb = XLSX.utils.book_new();
+  // ── Excel export for monthly summary (three sheets) ─────────────────────────
+  async function exportCsv() {
+    setExportLoading(true);
+    try {
+      const wb = XLSX.utils.book_new();
 
-    // Sheet 1 — Detailed Records
-    const detailRows = [
-      ['Engineer', 'Date', 'Start', 'End', 'Duration', 'Adjusted Duration', 'Work Description'],
-      ...approvedRecords.map((r) => [
-        r.engineerName,
-        fmtDate(r.startTimestamp),
-        fmtTime(r.startTimestamp),
-        fmtTime(r.endTimestamp),
-        r.duration,
-        r.adjustedDuration || r.duration,
-        r.workDescription || '',
-      ]),
-    ];
-    const ws1 = XLSX.utils.aoa_to_sheet(detailRows);
-    ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 40 }];
-    XLSX.utils.book_append_sheet(wb, ws1, 'Detailed Records');
+      // Sheet 1 — Detailed Records
+      const detailRows = [
+        ['Engineer', 'Date', 'Start', 'End', 'Duration', 'Adjusted Duration', 'Work Description'],
+        ...approvedRecords.map((r) => [
+          r.engineerName,
+          fmtDate(r.startTimestamp),
+          fmtTime(r.startTimestamp),
+          fmtTime(r.endTimestamp),
+          r.duration,
+          r.adjustedDuration || r.duration,
+          r.workDescription || '',
+        ]),
+      ];
+      const ws1 = XLSX.utils.aoa_to_sheet(detailRows);
+      ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 40 }];
+      XLSX.utils.book_append_sheet(wb, ws1, 'Detailed Records');
 
-    // Sheet 2 — Summary by Engineer
-    const summaryRows = [
-      ['Engineer', 'Total Sessions', 'Total Hours'],
-      ...Object.entries(summaryByEngineer)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, stats]) => [name, stats.sessions, formatHours(stats.totalHours)]),
-      [],
-      ['TOTAL',
-        Object.values(summaryByEngineer).reduce((s, v) => s + v.sessions, 0),
-        formatHours(Object.values(summaryByEngineer).reduce((s, v) => s + v.totalHours, 0)),
-      ],
-    ];
-    const ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
-    ws2['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }];
-    XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
+      // Sheet 2 — Summary by Engineer
+      const summaryRows = [
+        ['Engineer', 'Total Sessions', 'Total Hours'],
+        ...Object.entries(summaryByEngineer)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([name, stats]) => [name, stats.sessions, formatHours(stats.totalHours)]),
+        [],
+        ['TOTAL',
+          Object.values(summaryByEngineer).reduce((s, v) => s + v.sessions, 0),
+          formatHours(Object.values(summaryByEngineer).reduce((s, v) => s + v.totalHours, 0)),
+        ],
+      ];
+      const ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
+      ws2['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
 
-    const filename = `overtime-${useDateRange ? `${summaryFrom}-to-${summaryTo}` : summaryMonth}.xlsx`;
-    XLSX.writeFile(wb, filename);
+      // Sheet 3 — Weekly Duty Rota
+      const periodFrom = useDateRange ? summaryFrom : `${summaryMonth}-01`;
+      const periodTo   = useDateRange ? summaryTo   : (() => {
+        const d = new Date(summaryMonth + '-01'); d.setMonth(d.getMonth() + 1); d.setDate(0);
+        return d.toISOString().split('T')[0];
+      })();
+      const rotaRows = [['Week Number', 'Week Start', 'Week End', 'Engineers on Duty']];
+      try {
+        const d1 = new Date(periodFrom); d1.setDate(d1.getDate() - 7);
+        const d2 = new Date(periodTo);   d2.setDate(d2.getDate() + 7);
+        const rRes  = await fetch(`/api/rota?from=${d1.toISOString().split('T')[0]}&to=${d2.toISOString().split('T')[0]}`);
+        const rJson = await rRes.json();
+        if (rJson.success) {
+          const byWeek = {};
+          (rJson.entries || []).forEach((e) => {
+            if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = [];
+            byWeek[e.week_start_date].push(e.engineer_name);
+          });
+          getWeeksInRange(periodFrom, periodTo, rotaWeekStartDay).forEach((w) => {
+            const names = byWeek[w.weekStartDate] || [];
+            rotaRows.push([
+              w.weekNumber,
+              fmtDate(w.weekStartDate),
+              fmtDate(w.weekEndDate),
+              names.length > 0 ? names.join(', ') : 'Not assigned',
+            ]);
+          });
+        }
+      } catch { /* include empty sheet if rota fetch fails */ }
+      const ws3 = XLSX.utils.aoa_to_sheet(rotaRows);
+      ws3['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 55 }];
+      XLSX.utils.book_append_sheet(wb, ws3, 'Weekly Duty Rota');
+
+      const filename = `overtime-${useDateRange ? `${summaryFrom}-to-${summaryTo}` : summaryMonth}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    } finally {
+      setExportLoading(false);
+    }
   }
 
   // ── Compliance form submit ────────────────────────────────────────────────────
@@ -1163,6 +1354,7 @@ export default function Dashboard() {
     { id: 'overtime',    label: 'Engineer Overtime' },
     { id: 'approvals',   label: 'Approvals' },
     { id: 'monthly',     label: 'Monthly Summary' },
+    { id: 'rota',        label: 'Weekly Rota' },
     { id: 'compliance',  label: 'Contractor Compliance' },
   ];
 
@@ -1172,6 +1364,17 @@ export default function Dashboard() {
         <ComplianceFilesModal
           companyName={filesModalCompany}
           onClose={() => setFilesModalCompany(null)}
+        />
+      )}
+
+      {rotaEditModal && (
+        <RotaEditModal
+          week={rotaEditModal}
+          assignedEngineers={rotaEditModal.assignedEngineers}
+          engineers={ENGINEERS}
+          managers={managersList}
+          onConfirm={(msg) => { setRotaEditModal(null); setRotaMessage(msg); fetchRotaData(); }}
+          onCancel={() => setRotaEditModal(null)}
         />
       )}
 
@@ -1251,6 +1454,7 @@ export default function Dashboard() {
                 setAmendOvertimeMessage('');
                 setForceSignOutMsg('');
                 setNotifyMsg('');
+                setRotaMessage('');
               }}
             >
               {t.label}
@@ -1355,6 +1559,25 @@ export default function Dashboard() {
           </div>
         )}
 
+        {dashTab === 'rota' && (
+          <div className="filter-row" style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ fontSize: '0.85rem', color: '#6b7280', whiteSpace: 'nowrap' }}>Month</label>
+              <input type="month" value={rotaMonth} onChange={(e) => setRotaMonth(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ fontSize: '0.85rem', color: '#6b7280', whiteSpace: 'nowrap' }}>Week starts</label>
+              <select value={rotaWeekStartDay} onChange={(e) => setRotaWeekStartDay(Number(e.target.value))}>
+                <option value={0}>Sunday</option>
+                <option value={1}>Monday</option>
+              </select>
+            </div>
+            <button className="btn btn--secondary btn--sm" onClick={fetchRotaData} disabled={rotaLoading}>
+              {rotaLoading ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
+        )}
+
         {dashTab === 'compliance' && (
           <div className="filter-row" style={{ marginTop: 12 }}>
             <button className="btn btn--secondary btn--sm" onClick={fetchComplianceData} disabled={complianceLoading}>
@@ -1411,7 +1634,7 @@ export default function Dashboard() {
                     <table>
                       <thead>
                         <tr>
-                          <th>ID</th><th>Name</th><th>Company</th><th>Signed In</th>
+                          <th>ID</th><th>Name</th><th>Company</th><th>Date</th><th>Signed In</th>
                           <th>Contact No.</th><th>Building(s)</th><th>Point of Contact</th>
                           <th>Status</th><th>Actions</th>
                         </tr>
@@ -1424,6 +1647,7 @@ export default function Dashboard() {
                               <td>{row.id}</td>
                               <td><strong>{row.operativeName}</strong></td>
                               <td>{row.companyName}</td>
+                              <td>{fmtDate(row.signInTime)}</td>
                               <td>{fmtTime(row.signInTime)}</td>
                               <td>{row.contactNumber  || <span className="text-muted">—</span>}</td>
                               <td>{row.buildings      || <span className="text-muted">—</span>}</td>
@@ -1789,8 +2013,8 @@ export default function Dashboard() {
                 {summaryEngineer && ` (${summaryEngineer})`}
               </p>
               {Object.keys(summaryByEngineer).length > 0 && (
-                <button className="btn btn--secondary btn--sm" onClick={exportCsv}>
-                  Export CSV
+                <button className="btn btn--secondary btn--sm" onClick={exportCsv} disabled={exportLoading}>
+                  {exportLoading ? 'Exporting…' : 'Export Excel'}
                 </button>
               )}
             </div>
@@ -1833,6 +2057,74 @@ export default function Dashboard() {
                 </table>
               </div>
             )}
+          </div>
+        </>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* ── WEEKLY ROTA TAB ──────────────────────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {dashTab === 'rota' && (
+        <>
+          {rotaError   && <div className="alert alert--error">{rotaError}</div>}
+          {rotaMessage && <div className="alert alert--success">{rotaMessage}</div>}
+
+          <div className="card">
+            <p className="card__title">Weekly Duty Rota — {rotaMonth}</p>
+            <p className="text-sm text-muted" style={{ marginBottom: 12 }}>
+              Assign engineers to duty each week. Assignments are included in the Monthly Summary Excel export.
+            </p>
+
+            {rotaLoading && <p className="text-muted text-sm">Loading rota…</p>}
+
+            {!rotaLoading && (() => {
+              const monthStart = `${rotaMonth}-01`;
+              const monthEndD  = new Date(rotaMonth + '-01');
+              monthEndD.setMonth(monthEndD.getMonth() + 1); monthEndD.setDate(0);
+              const monthEnd   = monthEndD.toISOString().split('T')[0];
+              const weeks      = getWeeksInRange(monthStart, monthEnd, rotaWeekStartDay);
+              const byWeek     = {};
+              (rotaData || []).forEach((e) => {
+                if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = [];
+                byWeek[e.week_start_date].push(e.engineer_name);
+              });
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {weeks.map((week) => {
+                    const assigned = byWeek[week.weekStartDate] || [];
+                    return (
+                      <div key={week.weekStartDate} style={{
+                        padding: '12px 16px', border: '1px solid var(--border)',
+                        borderRadius: 6, background: 'var(--bg)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        flexWrap: 'wrap', gap: 8,
+                      }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
+                            {fmtWeekLabel(week)}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', marginTop: 4, color: assigned.length ? '#374151' : '#9ca3af' }}>
+                            {assigned.length > 0
+                              ? assigned.join(', ')
+                              : 'No engineers assigned'}
+                          </div>
+                        </div>
+                        <button
+                          className="btn btn--secondary btn--sm"
+                          onClick={() => setRotaEditModal({ ...week, assignedEngineers: assigned })}
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {weeks.length === 0 && (
+                    <p className="text-muted text-sm">No weeks found for this month.</p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </>
       )}

@@ -125,3 +125,14 @@ ALTER TABLE engineer_overtime ADD COLUMN IF NOT EXISTS laurel_approval_timestamp
 
 -- managers: email column for overdue notifications
 ALTER TABLE managers ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
+
+-- ── 6b. weekly_rota (one row per engineer per week) ──
+CREATE TABLE IF NOT EXISTS weekly_rota (
+  id               BIGSERIAL PRIMARY KEY,
+  week_start_date  TEXT NOT NULL,
+  week_end_date    TEXT NOT NULL,
+  engineer_name    TEXT NOT NULL,
+  assigned_by      TEXT,
+  assigned_at      TEXT
+);
+ALTER TABLE weekly_rota DISABLE ROW LEVEL SECURITY;
