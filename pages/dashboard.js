@@ -769,7 +769,7 @@ function RotaEditModal({ week, assignedEngineers, engineers, managers, onConfirm
       });
       const data = await res.json();
       if (data.success) onConfirm(data.message);
-      else { setError(data.message || 'Failed. Please try again.'); setPin(''); }
+      else { setError((data.message || 'Failed. Please try again.') + (data.detail ? ` — ${data.detail}` : '')); setPin(''); }
     } catch { setError('Network error. Please try again.'); }
     finally { setLoading(false); }
   }

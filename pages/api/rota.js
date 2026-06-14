@@ -47,7 +47,7 @@ export default async function handler(req, res) {
       });
     } catch (err) {
       console.error('[rota POST] Error:', err);
-      return res.status(500).json({ success: false, message: 'Server error. Please try again.' });
+      return res.status(500).json({ success: false, message: 'Server error. Please try again.', detail: err.message });
     }
   }
 
