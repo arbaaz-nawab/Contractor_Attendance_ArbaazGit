@@ -1022,10 +1022,12 @@ export default function Dashboard() {
   const [approvalMessage, setApprovalMessage] = useState('');
 
   // Monthly summary tab
-  const [summaryMonth,    setSummaryMonth]    = useState(today.slice(0, 7));
-  const [summaryEngineer, setSummaryEngineer] = useState('');
-  const [summaryFrom,     setSummaryFrom]     = useState('');
-  const [summaryTo,       setSummaryTo]       = useState('');
+  const [summaryMonth,       setSummaryMonth]       = useState(today.slice(0, 7));
+  const [summaryEngineer,    setSummaryEngineer]    = useState('');
+  const [summaryFrom,        setSummaryFrom]        = useState('');
+  const [summaryTo,          setSummaryTo]          = useState('');
+  const [summaryRotaData,    setSummaryRotaData]    = useState([]);
+  const [summaryRotaLoading, setSummaryRotaLoading] = useState(false);
 
   // Compliance tab
   const [complianceData,       setComplianceData]       = useState(null);
@@ -1114,6 +1116,29 @@ export default function Dashboard() {
   useEffect(() => {
     if (unlocked && dashTab === 'rota') fetchRotaData();
   }, [unlocked, dashTab, rotaMonth, fetchRotaData]);
+
+  const fetchSummaryRota = useCallback(async (periodFrom, periodTo) => {
+    setSummaryRotaLoading(true);
+    try {
+      const d1 = new Date(periodFrom); d1.setDate(d1.getDate() - 7);
+      const d2 = new Date(periodTo);   d2.setDate(d2.getDate() + 7);
+      const res  = await fetch(`/api/rota?from=${d1.toISOString().split('T')[0]}&to=${d2.toISOString().split('T')[0]}`);
+      const json = await res.json();
+      if (json.success) setSummaryRotaData(json.entries || []);
+      else setSummaryRotaData([]);
+    } catch { setSummaryRotaData([]); }
+    finally { setSummaryRotaLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    if (!unlocked || dashTab !== 'monthly') return;
+    const periodFrom = useDateRange ? summaryFrom : `${summaryMonth}-01`;
+    const periodTo   = useDateRange ? summaryTo : (() => {
+      const d = new Date(summaryMonth + '-01'); d.setMonth(d.getMonth() + 1); d.setDate(0);
+      return d.toISOString().split('T')[0];
+    })();
+    if (periodFrom && periodTo) fetchSummaryRota(periodFrom, periodTo);
+  }, [unlocked, dashTab, summaryMonth, summaryFrom, summaryTo, useDateRange, fetchSummaryRota]);
 
   const fetchComplianceData = useCallback(async () => {
     setComplianceLoading(true); setComplianceError(null);
@@ -1249,7 +1274,13 @@ export default function Dashboard() {
       ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 40 }];
       XLSX.utils.book_append_sheet(wb, ws1, 'Detailed Records');
 
-      // Sheet 2 — Summary by Engineer
+      // Sheet 2 — Summary by Engineer + Weekly Duty Rota
+      const periodFrom = useDateRange ? summaryFrom : `${summaryMonth}-01`;
+      const periodTo   = useDateRange ? summaryTo   : (() => {
+        const d = new Date(summaryMonth + '-01'); d.setMonth(d.getMonth() + 1); d.setDate(0);
+        return d.toISOString().split('T')[0];
+      })();
+
       const summaryRows = [
         ['Engineer', 'Total Sessions', 'Total Hours'],
         ...Object.entries(summaryByEngineer)
@@ -1260,18 +1291,11 @@ export default function Dashboard() {
           Object.values(summaryByEngineer).reduce((s, v) => s + v.sessions, 0),
           formatHours(Object.values(summaryByEngineer).reduce((s, v) => s + v.totalHours, 0)),
         ],
+        [],
+        [],
+        ['Weekly Duty Rota'],
+        ['Week Number', 'Week Start', 'Week End', 'Engineers on Duty'],
       ];
-      const ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
-      ws2['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }];
-      XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
-
-      // Sheet 3 — Weekly Duty Rota
-      const periodFrom = useDateRange ? summaryFrom : `${summaryMonth}-01`;
-      const periodTo   = useDateRange ? summaryTo   : (() => {
-        const d = new Date(summaryMonth + '-01'); d.setMonth(d.getMonth() + 1); d.setDate(0);
-        return d.toISOString().split('T')[0];
-      })();
-      const rotaRows = [['Week Number', 'Week Start', 'Week End', 'Engineers on Duty']];
       try {
         const d1 = new Date(periodFrom); d1.setDate(d1.getDate() - 7);
         const d2 = new Date(periodTo);   d2.setDate(d2.getDate() + 7);
@@ -1285,7 +1309,7 @@ export default function Dashboard() {
           });
           getWeeksInRange(periodFrom, periodTo, rotaWeekStartDay).forEach((w) => {
             const names = byWeek[w.weekStartDate] || [];
-            rotaRows.push([
+            summaryRows.push([
               w.weekNumber,
               fmtDate(w.weekStartDate),
               fmtDate(w.weekEndDate),
@@ -1293,10 +1317,11 @@ export default function Dashboard() {
             ]);
           });
         }
-      } catch { /* include empty sheet if rota fetch fails */ }
-      const ws3 = XLSX.utils.aoa_to_sheet(rotaRows);
-      ws3['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 55 }];
-      XLSX.utils.book_append_sheet(wb, ws3, 'Weekly Duty Rota');
+      } catch { /* continue without rota if fetch fails */ }
+
+      const ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
+      ws2['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 55 }];
+      XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
 
       const filename = `overtime-${useDateRange ? `${summaryFrom}-to-${summaryTo}` : summaryMonth}.xlsx`;
       XLSX.writeFile(wb, filename);
@@ -2057,6 +2082,52 @@ export default function Dashboard() {
                 </table>
               </div>
             )}
+          </div>
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <p className="card__title" style={{ margin: 0, marginBottom: 12 }}>
+              Weekly Duty Rota —{' '}
+              {useDateRange ? `${summaryFrom} to ${summaryTo}` : summaryMonth}
+            </p>
+            {summaryRotaLoading && <p className="text-muted text-sm">Loading rota…</p>}
+            {!summaryRotaLoading && (() => {
+              const periodFrom = useDateRange ? summaryFrom : `${summaryMonth}-01`;
+              const periodTo   = useDateRange ? summaryTo : (() => {
+                const d = new Date(summaryMonth + '-01'); d.setMonth(d.getMonth() + 1); d.setDate(0);
+                return d.toISOString().split('T')[0];
+              })();
+              if (!periodFrom || !periodTo) return <p className="text-muted text-sm">Select a period to view rota.</p>;
+              const byWeek = {};
+              summaryRotaData.forEach((e) => {
+                if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = [];
+                byWeek[e.week_start_date].push(e.engineer_name);
+              });
+              const weeks = getWeeksInRange(periodFrom, periodTo, rotaWeekStartDay);
+              return (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Week No.</th><th>Week Start</th><th>Week End</th><th>Engineers on Duty</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {weeks.map((w, i) => {
+                        const names = byWeek[w.weekStartDate] || [];
+                        return (
+                          <tr key={i}>
+                            <td>{w.weekNumber}</td>
+                            <td>{fmtDate(w.weekStartDate)}</td>
+                            <td>{fmtDate(w.weekEndDate)}</td>
+                            <td>{names.length > 0 ? names.join(', ') : <span className="text-muted">Not assigned</span>}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         </>
       )}
