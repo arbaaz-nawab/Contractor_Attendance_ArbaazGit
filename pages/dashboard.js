@@ -835,6 +835,71 @@ function RotaEditModal({ week, assignedEngineers, engineers, managers, onConfirm
   );
 }
 
+// ── Weekly rota confirm modal ─────────────────────────────────────────────────
+function RotaConfirmModal({ week, assignedEngineers, managers, onConfirm, onCancel }) {
+  const [managerName, setManagerName] = useState('');
+  const [pin,         setPin]         = useState('');
+  const [error,       setError]       = useState('');
+  const [loading,     setLoading]     = useState(false);
+
+  async function handleConfirm() {
+    if (!managerName) { setError('Please select your name.'); return; }
+    if (!pin)         { setError('Please enter your PIN.'); return; }
+    setLoading(true); setError('');
+    try {
+      const res  = await fetch('/api/rota-confirm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weekStartDate: week.weekStartDate, managerName, pin }),
+      });
+      const data = await res.json();
+      if (data.success) onConfirm(data.message);
+      else { setError((data.message || 'Failed. Please try again.') + (data.detail ? ` — ${data.detail}` : '')); setPin(''); }
+    } catch { setError('Network error. Please try again.'); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div className="card" style={{ maxWidth: 420, width: '90%', margin: 0 }}>
+        <p className="card__title">Confirm On-Call Work Completed</p>
+        <p className="text-sm text-muted" style={{ marginBottom: 8 }}>{fmtWeekLabel(week)}</p>
+        <p className="text-sm" style={{ marginBottom: 16 }}>
+          <strong>Engineers on duty:</strong> {assignedEngineers.length > 0 ? assignedEngineers.join(', ') : '—'}
+        </p>
+        <p className="text-sm text-muted" style={{ marginBottom: 16 }}>
+          Confirm that the assigned engineer(s) completed their on-call duty for this week.
+          Your name will be recorded on the report.
+        </p>
+
+        {error && <div className="alert alert--error">{error}</div>}
+
+        <div className="form-group">
+          <label>Your name *</label>
+          <select value={managerName} onChange={(e) => setManagerName(e.target.value)}>
+            <option value="">— Select —</option>
+            {managers.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Your PIN *</label>
+          <input type="password" inputMode="numeric" value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleConfirm()}
+            placeholder="Enter PIN" maxLength={20} />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn--primary" onClick={handleConfirm} disabled={loading}>
+            {loading && <span className="spinner" />}
+            {loading ? 'Confirming…' : 'Confirm Completed'}
+          </button>
+          <button className="btn btn--secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Delete compliance record modal ────────────────────────────────────────────
 function DeleteComplianceModal({ companyName, onConfirm, onCancel, managers = MANAGERS }) {
   const [managerName, setManagerName] = useState('');
@@ -1052,7 +1117,8 @@ export default function Dashboard() {
   const [rotaLoading,     setRotaLoading]     = useState(false);
   const [rotaError,       setRotaError]       = useState(null);
   const [rotaMessage,     setRotaMessage]     = useState('');
-  const [rotaEditModal,   setRotaEditModal]   = useState(null);
+  const [rotaEditModal,    setRotaEditModal]    = useState(null);
+  const [rotaConfirmModal, setRotaConfirmModal] = useState(null);
 
   // Monthly summary export loading
   const [exportLoading, setExportLoading] = useState(false);
@@ -1303,7 +1369,7 @@ export default function Dashboard() {
         [],
         [],
         ['Weekly Duty Rota (Completed Weeks)'],
-        ['Week Number', 'Week Start', 'Week End', 'Engineers on Duty', 'Assigned By'],
+        ['Week Number', 'Week Start', 'Week End', 'Engineers on Duty', 'Assigned By', 'Confirmed By'],
       ];
       try {
         const d1 = new Date(periodFrom); d1.setDate(d1.getDate() - 7);
@@ -1313,27 +1379,29 @@ export default function Dashboard() {
         if (rJson.success) {
           const byWeek = {};
           (rJson.entries || []).forEach((e) => {
-            if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = { engineers: [], assignedBy: '' };
+            if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = { engineers: [], assignedBy: '', confirmedBy: '' };
             byWeek[e.week_start_date].engineers.push(e.engineer_name);
-            byWeek[e.week_start_date].assignedBy = e.assigned_by || '';
+            byWeek[e.week_start_date].assignedBy  = e.assigned_by  || '';
+            byWeek[e.week_start_date].confirmedBy = e.confirmed_by || '';
           });
           getWeeksInRange(periodFrom, periodTo, 1)
             .filter((w) => w.weekEndDate < today)
             .forEach((w) => {
-              const entry = byWeek[w.weekStartDate] || { engineers: [], assignedBy: '' };
+              const entry = byWeek[w.weekStartDate] || { engineers: [], assignedBy: '', confirmedBy: '' };
               summaryRows.push([
                 w.weekNumber,
                 fmtDate(w.weekStartDate),
                 fmtDate(w.weekEndDate),
                 entry.engineers.length > 0 ? entry.engineers.join(', ') : 'Not assigned',
-                entry.assignedBy || '',
+                entry.assignedBy  || '',
+                entry.confirmedBy || 'Pending',
               ]);
             });
         }
       } catch { /* continue without rota if fetch fails */ }
 
       const ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
-      ws2['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 55 }, { wch: 22 }];
+      ws2['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 55 }, { wch: 22 }, { wch: 22 }];
       XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
 
       const filename = `overtime-${useDateRange ? `${summaryFrom}-to-${summaryTo}` : summaryMonth}.xlsx`;
@@ -1413,6 +1481,16 @@ export default function Dashboard() {
           managers={managersList}
           onConfirm={(msg) => { setRotaEditModal(null); setRotaMessage(msg); fetchRotaData(); }}
           onCancel={() => setRotaEditModal(null)}
+        />
+      )}
+
+      {rotaConfirmModal && (
+        <RotaConfirmModal
+          week={rotaConfirmModal}
+          assignedEngineers={rotaConfirmModal.assignedEngineers}
+          managers={managersList}
+          onConfirm={(msg) => { setRotaConfirmModal(null); setRotaMessage(msg); fetchRotaData(); }}
+          onCancel={() => setRotaConfirmModal(null)}
         />
       )}
 
@@ -2108,9 +2186,10 @@ export default function Dashboard() {
               if (!periodFrom || !periodTo) return <p className="text-muted text-sm">Select a period to view rota.</p>;
               const byWeek = {};
               summaryRotaData.forEach((e) => {
-                if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = { engineers: [], assignedBy: '' };
+                if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = { engineers: [], assignedBy: '', confirmedBy: '' };
                 byWeek[e.week_start_date].engineers.push(e.engineer_name);
-                byWeek[e.week_start_date].assignedBy = e.assigned_by || '';
+                byWeek[e.week_start_date].assignedBy  = e.assigned_by  || '';
+                byWeek[e.week_start_date].confirmedBy = e.confirmed_by || '';
               });
               const weeks = getWeeksInRange(periodFrom, periodTo, 1).filter(w => w.weekEndDate < today);
               if (weeks.length === 0) return <p className="text-muted text-sm">No completed weeks in this period.</p>;
@@ -2119,19 +2198,23 @@ export default function Dashboard() {
                   <table>
                     <thead>
                       <tr>
-                        <th>Week No.</th><th>Week Start</th><th>Week End</th><th>Engineers on Duty</th><th>Assigned By</th>
+                        <th>Week No.</th><th>Week Start</th><th>Week End</th><th>Engineers on Duty</th><th>Assigned By</th><th>Confirmed By</th>
                       </tr>
                     </thead>
                     <tbody>
                       {weeks.map((w, i) => {
-                        const entry = byWeek[w.weekStartDate] || { engineers: [], assignedBy: '' };
+                        const entry = byWeek[w.weekStartDate] || { engineers: [], assignedBy: '', confirmedBy: '' };
                         return (
                           <tr key={i}>
                             <td>{w.weekNumber}</td>
                             <td>{fmtDate(w.weekStartDate)}</td>
                             <td>{fmtDate(w.weekEndDate)}</td>
                             <td>{entry.engineers.length > 0 ? entry.engineers.join(', ') : <span className="text-muted">Not assigned</span>}</td>
-                            <td>{entry.assignedBy || <span className="text-muted">—</span>}</td>
+                            <td>{entry.assignedBy  || <span className="text-muted">—</span>}</td>
+                            <td>{entry.confirmedBy
+                              ? <span style={{ color: '#15803d', fontWeight: 500 }}>{entry.confirmedBy}</span>
+                              : <span className="text-muted">Pending</span>}
+                            </td>
                           </tr>
                         );
                       })}
@@ -2168,18 +2251,20 @@ export default function Dashboard() {
               const weeks      = getWeeksInRange(monthStart, monthEnd, 1);
               const byWeek     = {};
               (rotaData || []).forEach((e) => {
-                if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = { engineers: [], assignedBy: '' };
+                if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = { engineers: [], assignedBy: '', confirmedBy: '' };
                 byWeek[e.week_start_date].engineers.push(e.engineer_name);
-                byWeek[e.week_start_date].assignedBy = e.assigned_by || '';
+                byWeek[e.week_start_date].assignedBy   = e.assigned_by   || '';
+                byWeek[e.week_start_date].confirmedBy  = e.confirmed_by  || '';
               });
 
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {weeks.map((week) => {
-                    const entry      = byWeek[week.weekStartDate] || { engineers: [], assignedBy: '' };
-                    const assigned   = entry.engineers;
-                    const assignedBy = entry.assignedBy;
-                    const completed  = week.weekEndDate < today;
+                    const entry       = byWeek[week.weekStartDate] || { engineers: [], assignedBy: '', confirmedBy: '' };
+                    const assigned    = entry.engineers;
+                    const assignedBy  = entry.assignedBy;
+                    const confirmedBy = entry.confirmedBy;
+                    const completed   = week.weekEndDate < today;
                     return (
                       <div key={week.weekStartDate} style={{
                         padding: '12px 16px', border: '1px solid var(--border)',
@@ -2188,9 +2273,18 @@ export default function Dashboard() {
                         flexWrap: 'wrap', gap: 8,
                       }}>
                         <div>
-                          <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
+                          <div style={{ fontWeight: 600, fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             {fmtWeekLabel(week)}
-                            {completed && <span style={{ marginLeft: 8, fontSize: '0.72rem', color: '#6b7280', fontWeight: 400 }}>Completed</span>}
+                            {completed && !confirmedBy && (
+                              <span style={{ fontSize: '0.72rem', color: '#b45309', background: '#fef3c7', padding: '1px 6px', borderRadius: 4 }}>
+                                Awaiting Confirmation
+                              </span>
+                            )}
+                            {confirmedBy && (
+                              <span style={{ fontSize: '0.72rem', color: '#15803d', background: '#dcfce7', padding: '1px 6px', borderRadius: 4 }}>
+                                Confirmed by {confirmedBy}
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: '0.8rem', marginTop: 4, color: assigned.length ? '#374151' : '#9ca3af' }}>
                             {assigned.length > 0 ? assigned.join(', ') : 'No engineers assigned'}
@@ -2201,12 +2295,18 @@ export default function Dashboard() {
                             </div>
                           )}
                         </div>
-                        <button
-                          className="btn btn--secondary btn--sm"
-                          onClick={() => setRotaEditModal({ ...week, assignedEngineers: assigned })}
-                        >
-                          Edit
-                        </button>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {completed && assigned.length > 0 && (
+                            <button className="btn btn--primary btn--sm"
+                              onClick={() => setRotaConfirmModal({ ...week, assignedEngineers: assigned })}>
+                              {confirmedBy ? 'Re-confirm' : 'Confirm'}
+                            </button>
+                          )}
+                          <button className="btn btn--secondary btn--sm"
+                            onClick={() => setRotaEditModal({ ...week, assignedEngineers: assigned })}>
+                            Edit
+                          </button>
+                        </div>
                       </div>
                     );
                   })}

@@ -133,6 +133,12 @@ CREATE TABLE IF NOT EXISTS weekly_rota (
   week_end_date    TEXT NOT NULL,
   engineer_name    TEXT NOT NULL,
   assigned_by      TEXT,
-  assigned_at      TEXT
+  assigned_at      TEXT,
+  confirmed_by     TEXT,
+  confirmed_at     TEXT
 );
 ALTER TABLE weekly_rota DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_weekly_rota" ON weekly_rota;
+CREATE POLICY "allow_all_weekly_rota" ON weekly_rota FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE weekly_rota ADD COLUMN IF NOT EXISTS confirmed_by TEXT;
+ALTER TABLE weekly_rota ADD COLUMN IF NOT EXISTS confirmed_at TEXT;
