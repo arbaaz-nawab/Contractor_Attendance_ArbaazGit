@@ -1385,7 +1385,7 @@ export default function Dashboard() {
             byWeek[e.week_start_date].confirmedBy = e.confirmed_by || '';
           });
           getWeeksInRange(periodFrom, periodTo, 1)
-            .filter((w) => w.weekEndDate < today)
+            .filter((w) => w.weekEndDate <= today)
             .forEach((w) => {
               const entry = byWeek[w.weekStartDate] || { engineers: [], assignedBy: '', confirmedBy: '' };
               summaryRows.push([
@@ -2191,7 +2191,7 @@ export default function Dashboard() {
                 byWeek[e.week_start_date].assignedBy  = e.assigned_by  || '';
                 byWeek[e.week_start_date].confirmedBy = e.confirmed_by || '';
               });
-              const weeks = getWeeksInRange(periodFrom, periodTo, 1).filter(w => w.weekEndDate < today);
+              const weeks = getWeeksInRange(periodFrom, periodTo, 1).filter(w => w.weekEndDate <= today);
               if (weeks.length === 0) return <p className="text-muted text-sm">No completed weeks in this period.</p>;
               return (
                 <div className="table-wrap">
@@ -2264,7 +2264,7 @@ export default function Dashboard() {
                     const assigned    = entry.engineers;
                     const assignedBy  = entry.assignedBy;
                     const confirmedBy = entry.confirmedBy;
-                    const completed   = week.weekEndDate < today;
+                    const completed   = week.weekEndDate <= today;
                     return (
                       <div key={week.weekStartDate} style={{
                         padding: '12px 16px', border: '1px solid var(--border)',
