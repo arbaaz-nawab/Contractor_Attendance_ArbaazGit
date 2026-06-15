@@ -1048,7 +1048,6 @@ export default function Dashboard() {
 
   // Weekly Rota tab
   const [rotaMonth,       setRotaMonth]       = useState(today.slice(0, 7));
-  const [rotaWeekStartDay, setRotaWeekStartDay] = useState(WEEK_START_DAY);
   const [rotaData,        setRotaData]        = useState(null);
   const [rotaLoading,     setRotaLoading]     = useState(false);
   const [rotaError,       setRotaError]       = useState(null);
@@ -1303,8 +1302,8 @@ export default function Dashboard() {
         ],
         [],
         [],
-        ['Weekly Duty Rota'],
-        ['Week Number', 'Week Start', 'Week End', 'Engineers on Duty'],
+        ['Weekly Duty Rota (Completed Weeks)'],
+        ['Week Number', 'Week Start', 'Week End', 'Engineers on Duty', 'Assigned By'],
       ];
       try {
         const d1 = new Date(periodFrom); d1.setDate(d1.getDate() - 7);
@@ -1314,23 +1313,27 @@ export default function Dashboard() {
         if (rJson.success) {
           const byWeek = {};
           (rJson.entries || []).forEach((e) => {
-            if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = [];
-            byWeek[e.week_start_date].push(e.engineer_name);
+            if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = { engineers: [], assignedBy: '' };
+            byWeek[e.week_start_date].engineers.push(e.engineer_name);
+            byWeek[e.week_start_date].assignedBy = e.assigned_by || '';
           });
-          getWeeksInRange(periodFrom, periodTo, rotaWeekStartDay).forEach((w) => {
-            const names = byWeek[w.weekStartDate] || [];
-            summaryRows.push([
-              w.weekNumber,
-              fmtDate(w.weekStartDate),
-              fmtDate(w.weekEndDate),
-              names.length > 0 ? names.join(', ') : 'Not assigned',
-            ]);
-          });
+          getWeeksInRange(periodFrom, periodTo, 1)
+            .filter((w) => w.weekEndDate < today)
+            .forEach((w) => {
+              const entry = byWeek[w.weekStartDate] || { engineers: [], assignedBy: '' };
+              summaryRows.push([
+                w.weekNumber,
+                fmtDate(w.weekStartDate),
+                fmtDate(w.weekEndDate),
+                entry.engineers.length > 0 ? entry.engineers.join(', ') : 'Not assigned',
+                entry.assignedBy || '',
+              ]);
+            });
         }
       } catch { /* continue without rota if fetch fails */ }
 
       const ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
-      ws2['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 55 }];
+      ws2['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 55 }, { wch: 22 }];
       XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
 
       const filename = `overtime-${useDateRange ? `${summaryFrom}-to-${summaryTo}` : summaryMonth}.xlsx`;
@@ -1599,13 +1602,6 @@ export default function Dashboard() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <label style={{ fontSize: '0.85rem', color: '#6b7280', whiteSpace: 'nowrap' }}>Month</label>
               <input type="month" value={rotaMonth} onChange={(e) => setRotaMonth(e.target.value)} />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <label style={{ fontSize: '0.85rem', color: '#6b7280', whiteSpace: 'nowrap' }}>Week starts</label>
-              <select value={rotaWeekStartDay} onChange={(e) => setRotaWeekStartDay(Number(e.target.value))}>
-                <option value={0}>Sunday</option>
-                <option value={1}>Monday</option>
-              </select>
             </div>
             <button className="btn btn--secondary btn--sm" onClick={fetchRotaData} disabled={rotaLoading}>
               {rotaLoading ? 'Refreshing...' : 'Refresh'}
@@ -2112,27 +2108,30 @@ export default function Dashboard() {
               if (!periodFrom || !periodTo) return <p className="text-muted text-sm">Select a period to view rota.</p>;
               const byWeek = {};
               summaryRotaData.forEach((e) => {
-                if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = [];
-                byWeek[e.week_start_date].push(e.engineer_name);
+                if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = { engineers: [], assignedBy: '' };
+                byWeek[e.week_start_date].engineers.push(e.engineer_name);
+                byWeek[e.week_start_date].assignedBy = e.assigned_by || '';
               });
-              const weeks = getWeeksInRange(periodFrom, periodTo, rotaWeekStartDay);
+              const weeks = getWeeksInRange(periodFrom, periodTo, 1).filter(w => w.weekEndDate < today);
+              if (weeks.length === 0) return <p className="text-muted text-sm">No completed weeks in this period.</p>;
               return (
                 <div className="table-wrap">
                   <table>
                     <thead>
                       <tr>
-                        <th>Week No.</th><th>Week Start</th><th>Week End</th><th>Engineers on Duty</th>
+                        <th>Week No.</th><th>Week Start</th><th>Week End</th><th>Engineers on Duty</th><th>Assigned By</th>
                       </tr>
                     </thead>
                     <tbody>
                       {weeks.map((w, i) => {
-                        const names = byWeek[w.weekStartDate] || [];
+                        const entry = byWeek[w.weekStartDate] || { engineers: [], assignedBy: '' };
                         return (
                           <tr key={i}>
                             <td>{w.weekNumber}</td>
                             <td>{fmtDate(w.weekStartDate)}</td>
                             <td>{fmtDate(w.weekEndDate)}</td>
-                            <td>{names.length > 0 ? names.join(', ') : <span className="text-muted">Not assigned</span>}</td>
+                            <td>{entry.engineers.length > 0 ? entry.engineers.join(', ') : <span className="text-muted">Not assigned</span>}</td>
+                            <td>{entry.assignedBy || <span className="text-muted">—</span>}</td>
                           </tr>
                         );
                       })}
@@ -2166,33 +2165,41 @@ export default function Dashboard() {
               const monthEndD  = new Date(rotaMonth + '-01');
               monthEndD.setMonth(monthEndD.getMonth() + 1); monthEndD.setDate(0);
               const monthEnd   = monthEndD.toISOString().split('T')[0];
-              const weeks      = getWeeksInRange(monthStart, monthEnd, rotaWeekStartDay);
+              const weeks      = getWeeksInRange(monthStart, monthEnd, 1);
               const byWeek     = {};
               (rotaData || []).forEach((e) => {
-                if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = [];
-                byWeek[e.week_start_date].push(e.engineer_name);
+                if (!byWeek[e.week_start_date]) byWeek[e.week_start_date] = { engineers: [], assignedBy: '' };
+                byWeek[e.week_start_date].engineers.push(e.engineer_name);
+                byWeek[e.week_start_date].assignedBy = e.assigned_by || '';
               });
 
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {weeks.map((week) => {
-                    const assigned = byWeek[week.weekStartDate] || [];
+                    const entry      = byWeek[week.weekStartDate] || { engineers: [], assignedBy: '' };
+                    const assigned   = entry.engineers;
+                    const assignedBy = entry.assignedBy;
+                    const completed  = week.weekEndDate < today;
                     return (
                       <div key={week.weekStartDate} style={{
                         padding: '12px 16px', border: '1px solid var(--border)',
-                        borderRadius: 6, background: 'var(--bg)',
+                        borderRadius: 6, background: completed ? 'var(--bg)' : '#f9fafb',
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                         flexWrap: 'wrap', gap: 8,
                       }}>
                         <div>
                           <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
                             {fmtWeekLabel(week)}
+                            {completed && <span style={{ marginLeft: 8, fontSize: '0.72rem', color: '#6b7280', fontWeight: 400 }}>Completed</span>}
                           </div>
                           <div style={{ fontSize: '0.8rem', marginTop: 4, color: assigned.length ? '#374151' : '#9ca3af' }}>
-                            {assigned.length > 0
-                              ? assigned.join(', ')
-                              : 'No engineers assigned'}
+                            {assigned.length > 0 ? assigned.join(', ') : 'No engineers assigned'}
                           </div>
+                          {assigned.length > 0 && assignedBy && (
+                            <div style={{ fontSize: '0.75rem', marginTop: 2, color: '#6b7280' }}>
+                              Assigned by: {assignedBy}
+                            </div>
+                          )}
                         </div>
                         <button
                           className="btn btn--secondary btn--sm"
