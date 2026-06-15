@@ -73,6 +73,12 @@ function ApprovalBadge({ status }) {
 }
 
 // ── Weekly rota helpers ───────────────────────────────────────────────────────
+
+// Use local date components to avoid UTC-shift bug in BST (UTC+1)
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function getWeekNumber(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + 4 - (d.getDay() || 7));
@@ -89,11 +95,9 @@ function getWeeksInRange(fromStr, toStr, weekStartDay = 0) {
   while (cur <= to) {
     const ws = new Date(cur);
     const we = new Date(cur); we.setDate(we.getDate() + 6);
-    weeks.push({
-      weekStartDate: ws.toISOString().split('T')[0],
-      weekEndDate:   we.toISOString().split('T')[0],
-      weekNumber:    getWeekNumber(ws.toISOString().split('T')[0]),
-    });
+    const wsStr = localDateStr(ws);
+    const weStr = localDateStr(we);
+    weeks.push({ weekStartDate: wsStr, weekEndDate: weStr, weekNumber: getWeekNumber(wsStr) });
     cur.setDate(cur.getDate() + 7);
   }
   return weeks;
@@ -1055,7 +1059,7 @@ function ApprovalModal({ target, action, managerName, onConfirm, onCancel }) {
 
 // ── Main dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr(new Date());
 
   const [unlocked, setUnlocked] = useState(false);
   const [dashTab,  setDashTab]  = useState('contractors');
