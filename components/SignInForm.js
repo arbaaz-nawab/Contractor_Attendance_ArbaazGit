@@ -11,9 +11,11 @@ const BUILDINGS = [
 
 const CONTACTS = [
   'Arbaaz Nawab',
+  'Chris Vasta',
   'Dean Marsh',
   'Frankie Sheekey',
   'Laurel Anderson',
+  'Sarfraz Arfan',
   'Other',
 ];
 
