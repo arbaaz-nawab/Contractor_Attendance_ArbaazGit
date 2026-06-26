@@ -19,7 +19,7 @@ const CONTACTS = [
 
 const COMPANIES = [
   'Barrier',
-  'BES'
+  'BES',
   'CMBS',
   'CMM Buildings',
   'Crest Lifts',
