@@ -62,7 +62,7 @@ Enter the **dashboard PIN** (set via `DASHBOARD_PIN` in Vercel environment varia
 |-----|---------------|
 | **Contractors** | Who is currently on site + completed visits, with date column. Filter by date range and company. Overdue contractors (past 18:00) are highlighted in red. |
 | **Overtime** | All engineer overtime sessions. Amend or delete records with manager PIN. |
-| **Approvals** | Pending overtime records awaiting your approval. Approve or reject using your manager PIN. |
+| **Approvals** | Overtime awaiting your approval — **only for engineers on your own team**. Approve or reject using your manager PIN. One approval marks the record FULLY APPROVED. |
 | **Monthly Summary** | Hours summary per engineer for any month or date range. Export to Excel (3 sheets). |
 | **Weekly Rota** | Assign engineers to duty each week. Included as a sheet in the Monthly Summary Excel export. |
 | **Compliance** | RAMS, induction and insurance dates per company. Upload, view and delete compliance documents. |
@@ -196,6 +196,34 @@ To add a new manager:
 1. Go to Supabase → **Table Editor** → `managers`
 2. Insert a new row with their name, PIN and email
 3. The manager will appear in all dropdowns immediately — no code change or redeploy needed
+
+---
+
+## Overtime Approval — Teams
+
+Overtime is approved by the engineer's **own line manager only**. One approval is
+enough — the record goes straight to **FULLY APPROVED**.
+
+| Line manager | Approves overtime for |
+|--------------|----------------------|
+| **Dean Marsh** | Lukasz Sawicki, Omar Ahmed, Philip Abiodun, Philip Bostock, Slawomir Kwiatkowski, William Owusu |
+| **Chris Vasta** | David Onyenuforo, Donnel Lewis, Krzysztof Niemalec, Louis Ridley-Campbell |
+| **Sarfraz Arfan** (override) | **Any engineer** — line manager to Dean and Chris, approves on their behalf when they are on leave |
+
+In the **Approvals** tab a manager only ever sees their own team's records.
+Sarfraz sees every engineer; when he approves someone outside a team of his own,
+the record is signed `Sarfraz Arfan (Override)` so the override is visible on the
+Excel export and in the dashboard.
+
+Every engineer is assigned to a team. If a new engineer is added to `ENGINEERS`
+without being placed in a team, only Sarfraz Arfan will be able to approve their
+overtime — so add them to a team at the same time.
+
+### Moving an engineer between teams
+
+Edit the `TEAMS` object in [`lib/config.js`](lib/config.js) — cut the engineer's
+name from one array and paste it into the other, then commit and redeploy.
+Each manager also needs a `manager_pin` in the Supabase `managers` table.
 
 To change a PIN: edit the `manager_pin` value directly in the table.
 

@@ -1,10 +1,14 @@
-﻿/**
+/**
  * POST /api/overtime-approve
  *
- * Dual-approval workflow: both Dean Marsh AND Laurel Anderson must approve.
- *   PENDING           -> first approver  -> PARTIALLY APPROVED
- *   PARTIALLY APPROVED -> second approver -> FULLY APPROVED
- *   Any manager can REJECT immediately.
+ * Team-based single-approval workflow:
+ *   • Each engineer has one line manager (lib/config.js -> TEAMS).
+ *   • Only that line manager may approve/reject their overtime.
+ *   • OVERRIDE_APPROVER (Sarfraz Arfan) may approve/reject any engineer.
+ *   • One approval is enough: PENDING -> FULLY APPROVED.
+ *
+ * Legacy PARTIALLY APPROVED records (from the old dual-approval scheme) can
+ * still be approved through to FULLY APPROVED by the responsible manager.
  *
  * Also allows editing PARTIALLY APPROVED or FULLY APPROVED records (manager PIN required).
  *
@@ -18,9 +22,7 @@
  */
 import { updateOvertimeRow, getAllOvertimeRows, getManagerPin } from '../../lib/db';
 import { ukDateTimeString } from '../../lib/ukTime';
-
-const DEAN   = 'Dean Marsh';
-const LAUREL = 'Laurel Anderson';
+import { canApprove, getLineManager, OVERRIDE_APPROVER } from '../../lib/config';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -79,6 +81,22 @@ export default async function handler(req, res) {
       });
     }
 
+    // ── Team permission check (applies to APPROVED and REJECTED) ────────────
+    const engineerName = record['Engineer Name'];
+    if (!canApprove(managerName, engineerName)) {
+      const lineManager = getLineManager(engineerName);
+      return res.status(403).json({
+        success: false,
+        message: lineManager
+          ? `${engineerName} is on ${lineManager}'s team. Only ${lineManager} or ${OVERRIDE_APPROVER} can action this record.`
+          : `${engineerName} is not assigned to a team. Only ${OVERRIDE_APPROVER} can action this record.`,
+      });
+    }
+
+    const isOverride = managerName === OVERRIDE_APPROVER;
+    const now        = ukDateTimeString();
+    const signature  = isOverride ? `${managerName} (Override)` : managerName;
+
     // ── REJECTED: allowed from PENDING or PARTIALLY APPROVED ────────────────
     if (action === 'REJECTED') {
       if (!['PENDING', 'PARTIALLY APPROVED'].includes(currentStatus)) {
@@ -89,8 +107,8 @@ export default async function handler(req, res) {
       }
       await updateOvertimeRow(Number(rowNumber), {
         'Approval Status':    'REJECTED',
-        'Approved By':        managerName,
-        'Approval Timestamp': ukDateTimeString(),
+        'Approved By':        signature,
+        'Approval Timestamp': now,
       });
       return res.status(200).json({
         success: true,
@@ -98,7 +116,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ── APPROVED: dual-approval logic ────────────────────────────────────────
+    // ── APPROVED: single approval by the responsible line manager ───────────
     if (!['PENDING', 'PARTIALLY APPROVED'].includes(currentStatus)) {
       return res.status(409).json({
         success: false,
@@ -106,52 +124,19 @@ export default async function handler(req, res) {
       });
     }
 
-    // Prevent same manager approving twice
-    const isDean   = managerName === DEAN;
-    const isLaurel = managerName === LAUREL;
-
-    if (isDean   && record['Approved By Dean'])   {
-      return res.status(409).json({ success: false, message: 'You have already approved this record.' });
-    }
-    if (isLaurel && record['Approved By Laurel']) {
-      return res.status(409).json({ success: false, message: 'You have already approved this record.' });
-    }
-
-    const now = ukDateTimeString();
-
-    const updates = {};
-
-    if (isDean) {
-      updates['Approved By Dean']          = managerName;
-      updates['Dean Approval Timestamp']   = now;
-    } else if (isLaurel) {
-      updates['Approved By Laurel']        = managerName;
-      updates['Laurel Approval Timestamp'] = now;
-    } else {
-      return res.status(403).json({ success: false, message: `${managerName} is not an authorised approver.` });
-    }
-
+    const updates = {
+      'Approval Status':    'FULLY APPROVED',
+      'Approved By':        signature,
+      'Approval Timestamp': now,
+    };
     if (adjustedDuration) updates['Adjusted Duration'] = adjustedDuration;
-
-    // Determine new status
-    const deanApproved   = isDean   ? true : !!record['Approved By Dean'];
-    const laurelApproved = isLaurel ? true : !!record['Approved By Laurel'];
-
-    if (deanApproved && laurelApproved) {
-      updates['Approval Status']    = 'FULLY APPROVED';
-      updates['Approved By']        = `${DEAN} & ${LAUREL}`;
-      updates['Approval Timestamp'] = now;
-    } else {
-      updates['Approval Status'] = 'PARTIALLY APPROVED';
-    }
 
     await updateOvertimeRow(Number(rowNumber), updates);
 
-    const newStatus = updates['Approval Status'];
     return res.status(200).json({
       success: true,
-      message: `Overtime ${newStatus === 'FULLY APPROVED' ? 'fully approved' : `partially approved by ${managerName} — awaiting second approval`}.`,
-      newStatus,
+      message: `Overtime approved by ${signature}.`,
+      newStatus: 'FULLY APPROVED',
     });
   } catch (err) {
     console.error('Overtime approve error:', err);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from '../components/Layout';
 import Link from 'next/link';
-import { MANAGERS, APPROVERS, ENGINEERS, WEEK_START_DAY } from '../lib/config';
+import { MANAGERS, APPROVERS, ENGINEERS, WEEK_START_DAY, TEAMS, OVERRIDE_APPROVER, getLineManager, canApprove } from '../lib/config';
 import * as XLSX from 'xlsx';
 
 // Format datetime for display: "09:30"
@@ -1005,6 +1005,12 @@ function ApprovalModal({ target, action, managerName, onConfirm, onCancel }) {
           Date: {fmtDate(target.startTimestamp)}<br />
           Manager: {managerName}
         </p>
+        {getLineManager(target.engineerName) !== managerName && (
+          <div className="alert" style={{ background: '#fef3c7', color: '#92400e', fontSize: '0.8rem' }}>
+            Override: {target.engineerName}&apos;s line manager is{' '}
+            {getLineManager(target.engineerName) || 'not assigned'}. This action will be recorded against your name as an override.
+          </div>
+        )}
         {action === 'APPROVED' && (
           <div className="form-group">
             <label>Duration</label>
@@ -1259,21 +1265,19 @@ export default function Dashboard() {
     new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Europe/London' }).format(new Date())
   ) >= 18;
 
-  // ── Derived: approvals (dual approval — each manager sees what they haven't approved) ──
+  // ── Derived: approvals (team-based — each manager sees only their own team) ──
+  const isOverrideManager = currentManager === OVERRIDE_APPROVER;
+
   const pendingForManager = (overtimeData || []).filter((r) => {
     if (!currentManager) return false;
     if (r.status !== 'COMPLETED') return false;
     if (r.approvalStatus === 'FULLY APPROVED' || r.approvalStatus === 'REJECTED') return false;
-    if (currentManager === 'Dean Marsh'      && r.approvedByDean)   return false;
-    if (currentManager === 'Laurel Anderson' && r.approvedByLaurel) return false;
-    return true;
+    return canApprove(currentManager, r.engineerName);
   });
 
   const approvedByCurrentManager = (overtimeData || []).filter((r) => {
     if (!currentManager) return false;
-    if (currentManager === 'Dean Marsh')      return !!r.approvedByDean;
-    if (currentManager === 'Laurel Anderson') return !!r.approvedByLaurel;
-    return false;
+    return String(r.approvedBy || '').startsWith(currentManager);
   });
 
   // ── Derived: monthly summary (FULLY APPROVED only) ───────────────────────────
@@ -1337,9 +1341,10 @@ export default function Dashboard() {
 
       // Sheet 1 — Detailed Records
       const detailRows = [
-        ['Engineer', 'Date', 'Day', 'Start', 'End', 'Duration', 'Adjusted Duration', 'Work Description'],
+        ['Engineer', 'Line Manager', 'Date', 'Day', 'Start', 'End', 'Duration', 'Adjusted Duration', 'Work Description', 'Approved By'],
         ...approvedRecords.map((r) => [
           r.engineerName,
+          getLineManager(r.engineerName) || 'Unassigned',
           fmtDate(r.startTimestamp),
           fmtDay(r.startTimestamp),
           fmtTime(r.startTimestamp),
@@ -1347,10 +1352,11 @@ export default function Dashboard() {
           r.duration,
           r.adjustedDuration || r.duration,
           r.workDescription || '',
+          r.approvedBy || '',
         ]),
       ];
       const ws1 = XLSX.utils.aoa_to_sheet(detailRows);
-      ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 40 }];
+      ws1['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 40 }, { wch: 22 }];
       XLSX.utils.book_append_sheet(wb, ws1, 'Detailed Records');
 
       // Sheet 2 — Summary by Engineer + Weekly Duty Rota
@@ -1944,9 +1950,14 @@ export default function Dashboard() {
                             : <span className="text-muted">—</span>}
                         </td>
                         <td style={{ fontSize: '0.78rem' }}>
-                          {row.approvedByDean   && <div>Dean: {fmtDate(row.deanApprovalTimestamp)}</div>}
-                          {row.approvedByLaurel && <div>Laurel: {fmtDate(row.laurelApprovalTimestamp)}</div>}
-                          {!row.approvedByDean && !row.approvedByLaurel && <span className="text-muted">—</span>}
+                          {row.approvedBy
+                            ? <div>{row.approvedBy}<br /><span className="text-muted">{fmtDate(row.approvalTimestamp)}</span></div>
+                            : (row.approvedByDean || row.approvedByLaurel)
+                              ? <>
+                                  {row.approvedByDean   && <div>Dean: {fmtDate(row.deanApprovalTimestamp)}</div>}
+                                  {row.approvedByLaurel && <div>Laurel: {fmtDate(row.laurelApprovalTimestamp)}</div>}
+                                </>
+                              : <span className="text-muted">—</span>}
                         </td>
                         <td>
                           {row.imagePath
@@ -1990,7 +2001,9 @@ export default function Dashboard() {
                   Awaiting Your Approval — {currentManager} ({pendingForManager.length})
                 </p>
                 <p className="text-sm text-muted" style={{ marginBottom: 8 }}>
-                  Includes PENDING and PARTIALLY APPROVED records you have not yet approved.
+                  {isOverrideManager
+                    ? `You are the override approver — you can approve overtime for any engineer, on behalf of ${Object.keys(TEAMS).join(' or ')}.`
+                    : `Showing only engineers on your team (${(TEAMS[currentManager] || []).length}). One approval marks the record FULLY APPROVED.`}
                 </p>
 
                 {overtimeLoading && !overtimeData && (
@@ -2006,14 +2019,15 @@ export default function Dashboard() {
                         <tr>
                           <th>Engineer</th><th>Date</th><th>Day</th><th>Start</th><th>End</th>
                           <th>Duration</th><th>Work Description</th>
-                          <th>Status</th><th>Other Approver</th><th>Image</th><th>Actions</th>
+                          <th>Status</th><th>Line Manager</th><th>Image</th><th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {pendingForManager.map((row, i) => {
-                          const otherApproved = currentManager === 'Dean Marsh'
-                            ? (row.approvedByLaurel ? `Laurel ✓ ${fmtDate(row.laurelApprovalTimestamp)}` : 'Laurel: pending')
-                            : (row.approvedByDean   ? `Dean ✓ ${fmtDate(row.deanApprovalTimestamp)}`     : 'Dean: pending');
+                          const lineManager = getLineManager(row.engineerName);
+                          const teamLabel = lineManager
+                            ? (lineManager === currentManager ? `${lineManager} (your team)` : `${lineManager} — override`)
+                            : 'Unassigned — override';
                           return (
                             <tr key={i}>
                               <td><strong>{row.engineerName}</strong></td>
@@ -2026,7 +2040,7 @@ export default function Dashboard() {
                                 {row.workDescription || <span className="text-muted">—</span>}
                               </td>
                               <td><ApprovalBadge status={row.approvalStatus || 'PENDING'} /></td>
-                              <td style={{ fontSize: '0.78rem', color: '#6b7280' }}>{otherApproved}</td>
+                              <td style={{ fontSize: '0.78rem', color: '#6b7280' }}>{teamLabel}</td>
                               <td>
                                 {row.imagePath
                                   ? <a href={row.imagePath} target="_blank" rel="noreferrer"
@@ -2092,9 +2106,10 @@ export default function Dashboard() {
                             </td>
                             <td><ApprovalBadge status={row.approvalStatus} /></td>
                             <td style={{ fontSize: '0.78rem' }}>
-                              {currentManager === 'Dean Marsh'
-                                ? fmtDate(row.deanApprovalTimestamp)
-                                : fmtDate(row.laurelApprovalTimestamp)}
+                              {fmtDate(row.approvalTimestamp)}
+                              {String(row.approvedBy || '').includes('(Override)') && (
+                                <div style={{ color: '#b45309' }}>Override</div>
+                              )}
                             </td>
                             <td>
                               {row.imagePath
