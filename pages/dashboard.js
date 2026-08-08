@@ -1143,19 +1143,11 @@ export default function Dashboard() {
   const [compDoc, setCompDoc] = useState(null);
   const compDocRef = useRef();
 
-  // Auto-lock when user leaves the page
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'hidden') {
-        setUnlocked(false);
-        setData(null);
-        setOvertimeData(null);
-        setComplianceData(null);
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+  // Note: the dashboard deliberately does NOT auto-lock when the tab is hidden.
+  // Managers switch tabs constantly while working, and being thrown back to the
+  // PIN gate every time made the dashboard unusable. The session ends when the
+  // manager presses Lock or closes the tab (sessionStorage is cleared by the
+  // browser at that point).
 
   // ── Fetchers ──────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
