@@ -1063,12 +1063,17 @@ function ApprovalModal({ target, action, managerName, onConfirm, onCancel }) {
   );
 }
 
+// Key for the "dashboard already unlocked" flag. Stored in sessionStorage, so it
+// is scoped to the tab and wiped when the tab closes. No PIN is ever stored.
+const DASH_UNLOCK_KEY = 'gc_dashboard_unlocked';
+
 // ── Main dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const today = localDateStr(new Date());
 
-  const [unlocked, setUnlocked] = useState(false);
-  const [dashTab,  setDashTab]  = useState('contractors');
+  const [unlocked,    setUnlocked]    = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [dashTab,     setDashTab]     = useState('contractors');
 
   // Contractors tab
   const [dateFrom, setDateFrom] = useState(today);
@@ -1235,6 +1240,17 @@ export default function Dashboard() {
     finally { setComplianceLoading(false); }
   }, []);
 
+  // Restore the unlocked state on mount. sessionStorage survives tab switches,
+  // background reloads and refreshes, and is cleared automatically by the
+  // browser when the tab is closed — so the PIN is only re-asked on a new tab
+  // or after Lock.
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(DASH_UNLOCK_KEY) === 'true') setUnlocked(true);
+    } catch { /* sessionStorage blocked (private mode) — fall back to PIN gate */ }
+    setAuthChecked(true);
+  }, []);
+
   useEffect(() => {
     if (!unlocked) return;
     fetch('/api/managers')
@@ -1256,8 +1272,14 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchData, fetchOvertimeData, fetchComplianceData, unlocked]);
 
+  // Wait for the sessionStorage check before rendering, otherwise an already
+  // unlocked dashboard flashes the PIN gate for a frame on every reload.
+  if (!authChecked) {
+    return <Layout title="Dashboard"><p className="text-muted text-sm" style={{ padding: 24 }}>Loading…</p></Layout>;
+  }
+
   if (!unlocked) {
-    return <PinGate onUnlock={() => setUnlocked(true)} />;
+    return <PinGate onUnlock={unlockDashboard} />;
   }
 
   // ── Derived: is it past 18:00 UK time? ──────────────────────────────────────
@@ -1304,6 +1326,19 @@ export default function Dashboard() {
   }, {});
 
   // ── Actions ───────────────────────────────────────────────────────────────────
+  function unlockDashboard() {
+    try { sessionStorage.setItem(DASH_UNLOCK_KEY, 'true'); } catch { /* ignore */ }
+    setUnlocked(true);
+  }
+
+  function lockDashboard() {
+    try { sessionStorage.removeItem(DASH_UNLOCK_KEY); } catch { /* ignore */ }
+    setUnlocked(false);
+    setData(null);
+    setOvertimeData(null);
+    setComplianceData(null);
+  }
+
   function openApproval(record, action) {
     setApprovalMessage('');
     setApprovalModal({ target: record, action });
@@ -1558,7 +1593,7 @@ export default function Dashboard() {
         <Link href="/" style={{ color: '#6b7280', fontSize: '0.875rem' }}>← Back to Sign In/Out</Link>
         <button
           className="btn btn--secondary btn--sm"
-          onClick={() => { setUnlocked(false); setData(null); setOvertimeData(null); setComplianceData(null); }}
+          onClick={lockDashboard}
         >
           Lock
         </button>
