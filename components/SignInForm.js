@@ -298,7 +298,15 @@ export default function SignInForm() {
 
       const data = await res.json();
       if (data.success) {
-        setResult({ type: 'success', message: data.message });
+        // Sign-in is never blocked by outstanding RAMS, but say so plainly on the
+        // confirmation so the operative knows it has been recorded and chased.
+        const ramsOutstanding = hs.ramsApproved === 'No';
+        setResult({
+          type: 'success',
+          message: ramsOutstanding
+            ? `${data.message} RAMS is outstanding for this visit and has been flagged to the Estates team — do not begin work until it is submitted and approved.`
+            : data.message,
+        });
         setF(BLANK);
         setHs(BLANK_HS);
         setLookup(null);
@@ -467,8 +475,9 @@ export default function SignInForm() {
 
           {/* Compliance expiry warning banner */}
           {anyExpired && (
-            <div className="alert alert--error" style={{ marginBottom: 16 }}>
-              <strong>Compliance Expired</strong> — the following must be re-confirmed before proceeding:
+            <div className="alert" style={{ marginBottom: 16, background: '#fef3c7', color: '#92400e' }}>
+              <strong>Compliance Outstanding</strong> — you can still sign in, but the following need
+              re-submitting. Speak to your point of contact before starting work:
               <ul style={{ margin: '6px 0 0', paddingLeft: 20, fontSize: '0.875rem', lineHeight: '1.6' }}>
                 {contractorLookup.ramsExpired && (
                   <li>
@@ -602,7 +611,8 @@ export default function SignInForm() {
             </select>
             {hs.ramsApproved === 'No' && (
               <p className="text-sm" style={{ color: '#b45309', marginTop: 4 }}>
-                Warning: RAMS not submitted. You may not proceed on site without approved RAMS.
+                RAMS not yet submitted. You can still sign in — this will be flagged to the
+                Estates team. RAMS must be submitted and approved before work begins on site.
               </p>
             )}
           </div>
