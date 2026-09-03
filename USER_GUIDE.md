@@ -206,12 +206,12 @@ enough — the record goes straight to **FULLY APPROVED**.
 
 | Line manager | Approves overtime for |
 |--------------|----------------------|
-| **Dean Marsh** | Lukasz Sawicki, Omar Ahmed, Philip Abiodun, Philip Bostock, Slawomir Kwiatkowski, William Owusu |
-| **Chris Vasta** | David Onyenuforo, Donnel Lewis, Krzysztof Niemalec, Louis Ridley-Campbell |
-| **Sarfraz Arfan** (override) | **Any engineer** — line manager to Dean and Chris, approves on their behalf when they are on leave |
+| **Chris Vasta** | David Onyenuforo, Donnel Lewis, Ethan Relf, Krzysztof Niemalec, Louis Ridley-Campbell |
+| **Sarfraz Arfan** | Lukasz Sawicki, Omar Ahmed, Philip Abiodun, Philip Bostock, Slawomir Kwiatkowski, William Owusu |
+| **Sarfraz Arfan** (override) | **Any engineer** — senior line manager; approves on another manager’s behalf when they are on leave |
 
 In the **Approvals** tab a manager only ever sees their own team's records.
-Sarfraz sees every engineer; when he approves someone outside a team of his own,
+Sarfraz sees every engineer; when he approves someone outside his own team,
 the record is signed `Sarfraz Arfan (Override)` so the override is visible on the
 Excel export and in the dashboard.
 

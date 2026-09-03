@@ -2029,7 +2029,7 @@ export default function Dashboard() {
                 </p>
                 <p className="text-sm text-muted" style={{ marginBottom: 8 }}>
                   {isOverrideManager
-                    ? `You are the override approver — you can approve overtime for any engineer, on behalf of ${Object.keys(TEAMS).join(' or ')}.`
+                    ? `You are the override approver — you can approve overtime for any engineer, including on behalf of ${Object.keys(TEAMS).filter((m) => m !== OVERRIDE_APPROVER).join(' or ')}.`
                     : `Showing only engineers on your team (${(TEAMS[currentManager] || []).length}). One approval marks the record FULLY APPROVED.`}
                 </p>
 

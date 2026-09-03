@@ -45,7 +45,7 @@ This creates all the required tables:
 ### 1d. Add manager rows
 1. Go to **Table Editor → managers**
 2. Insert one row per manager with:
-   - `manager_name` — their full name (e.g. `Dean Marsh`)
+   - `manager_name` — their full name (e.g. `Chris Vasta`)
    - `manager_pin` — their personal PIN for approvals
    - `email` — their email address for overdue alerts
 
