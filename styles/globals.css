@@ -243,6 +243,20 @@ html, body {
   gap: 6px;
 }
 
+/* Larger tap target for the engineer Shift/Overtime picker — min 48px tall */
+.btn--xl {
+  padding: 20px 20px;
+  font-size: 1.0625rem;
+  min-height: 56px;
+}
+
+/* ── Engineer name picker (shift flow) ──────────────────────────────────────── */
+.picker-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 /* ── Alerts ──────────────────────────────────────────────────────────────────── */
 .alert {
   padding: 12px 16px;
@@ -388,6 +402,37 @@ html, body {
   font-size: 0.875rem;
   color: #78350f;
   line-height: 1.6;
+}
+
+/* ── Reason chips (shift early sign-out) ─────────────────────────────────────── */
+.chip-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chip {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  min-height: 48px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-btn);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9375rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.chip:hover { border-color: var(--accent); background: var(--accent-light); }
+
+.chip--selected {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  font-weight: 600;
 }
 
 /* ── Dashboard table ─────────────────────────────────────────────────────────── */
@@ -558,3 +603,140 @@ tbody tr:hover { background: var(--bg-subtle); }
 @media (max-width: 380px) {
   .stats-row { grid-template-columns: 1fr; }
 }
+
+/* ── Attendance tab (Live list / Week capsules / Month heat-map) ───────────────── */
+.attn-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.attn-nav__label { font-weight: 600; font-size: 0.9rem; color: var(--text); }
+
+.attn-live-list { display: flex; flex-direction: column; gap: 8px; }
+.attn-live-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  background: var(--bg);
+  gap: 12px;
+}
+.attn-live-row--missing {
+  border: 1.5px dashed var(--warning-border);
+  background: repeating-linear-gradient(45deg, #fffbeb, #fffbeb 8px, #fef3c7 8px, #fef3c7 16px);
+}
+
+.attn-week-grid {
+  display: grid;
+  grid-template-columns: 160px repeat(7, minmax(52px, 1fr));
+  gap: 6px;
+  min-width: 620px;
+}
+.attn-week-grid__name {
+  display: flex;
+  align-items: center;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.attn-day-head {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding-bottom: 4px;
+}
+.attn-day-head--weekend { color: var(--text-muted); }
+
+.attn-capsule {
+  position: relative;
+  height: 42px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+}
+.attn-capsule--weekend { background: var(--bg-subtle); opacity: 0.6; }
+.attn-capsule--weekend-filled { border-color: var(--border-strong); }
+.attn-capsule--filled { cursor: pointer; }
+.attn-capsule--missing {
+  cursor: pointer;
+  border: 1.5px dashed var(--warning-border);
+  background: repeating-linear-gradient(45deg, #fffbeb, #fffbeb 6px, #fef3c7 6px, #fef3c7 12px);
+}
+.attn-capsule__fill {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: var(--accent);
+  opacity: 0.85;
+  transition: height 0.2s;
+}
+.attn-capsule__icon {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning-border);
+}
+.attn-capsule__icon--sm { width: 6px; height: 6px; top: 2px; right: 2px; }
+
+.attn-tooltip {
+  z-index: 60;
+  background: var(--text);
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  width: max-content;
+  max-width: 220px;
+  box-shadow: var(--shadow-md);
+  text-align: left;
+}
+.attn-tooltip__title { font-weight: 600; margin-bottom: 4px; }
+
+.attn-month-block { margin-bottom: 22px; }
+.attn-month-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.attn-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 26px);
+  gap: 4px;
+}
+.attn-cal-cell {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.attn-cal-cell--outside { border-color: transparent; background: transparent; }
+.attn-cal-cell--empty { background: var(--bg); }
+.attn-cal-cell--weekend { background: var(--bg-subtle); opacity: 0.6; }
+.attn-cal-cell--missing {
+  cursor: pointer;
+  border: 1.5px dashed var(--warning-border);
+  background: repeating-linear-gradient(45deg, #fffbeb, #fffbeb 4px, #fef3c7 4px, #fef3c7 8px);
+  color: #92400e;
+}
+.attn-heat-0 { background: var(--bg); }
+.attn-heat-1 { background: #dbeafe; cursor: pointer; }
+.attn-heat-2 { background: #93c5fd; cursor: pointer; }
+.attn-heat-3 { background: #60a5fa; color: #fff; cursor: pointer; }
+.attn-heat-4 { background: #2563eb; color: #fff; cursor: pointer; }
+.attn-cal-cell__num { pointer-events: none; }

@@ -142,3 +142,33 @@ DROP POLICY IF EXISTS "allow_all_weekly_rota" ON weekly_rota;
 CREATE POLICY "allow_all_weekly_rota" ON weekly_rota FOR ALL USING (true) WITH CHECK (true);
 ALTER TABLE weekly_rota ADD COLUMN IF NOT EXISTS confirmed_by TEXT;
 ALTER TABLE weekly_rota ADD COLUMN IF NOT EXISTS confirmed_at TEXT;
+
+-- ── 6c. shift_log (daily engineer shift sign-in/out, separate from overtime) ──
+CREATE TABLE IF NOT EXISTS shift_log (
+  id               BIGSERIAL PRIMARY KEY,
+  engineer_name    TEXT NOT NULL,
+  shift_date       TEXT NOT NULL,
+  sign_in_time     TEXT,
+  sign_out_time    TEXT,
+  hours            TEXT,
+  status           TEXT NOT NULL DEFAULT 'OPEN',
+  early_reason     TEXT,
+  early_note       TEXT,
+  device_id        TEXT,
+  corrected_by     TEXT,
+  corrected_at     TEXT,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE shift_log DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_shift_log" ON shift_log;
+CREATE POLICY "allow_all_shift_log" ON shift_log FOR ALL USING (true) WITH CHECK (true);
+
+-- Only one OPEN shift per engineer at a time — closes the race where two
+-- phones sign in as the same engineer within the same check-then-insert
+-- window and would otherwise both succeed.
+CREATE UNIQUE INDEX IF NOT EXISTS shift_log_one_open_per_engineer_idx
+  ON shift_log (engineer_name) WHERE status = 'OPEN';
+
+-- Manager's note when correcting a MISSING_SIGNOUT (or forgotten OPEN) shift
+-- from the dashboard Attendance tab.
+ALTER TABLE shift_log ADD COLUMN IF NOT EXISTS correction_note TEXT;

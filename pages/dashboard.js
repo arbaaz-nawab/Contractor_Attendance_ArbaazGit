@@ -3,6 +3,7 @@ import Layout from '../components/Layout';
 import Link from 'next/link';
 import { MANAGERS, APPROVERS, ENGINEERS, WEEK_START_DAY, TEAMS, OVERRIDE_APPROVER, getLineManager, canApprove } from '../lib/config';
 import * as XLSX from 'xlsx';
+import AttendanceTab from '../components/AttendanceTab';
 import { dashFetch } from '../lib/sessionClient';
 
 // Format datetime for display: "09:30"
@@ -1527,6 +1528,7 @@ export default function Dashboard() {
     { id: 'monthly',     label: 'Monthly Summary' },
     { id: 'rota',        label: 'Weekly Rota' },
     { id: 'compliance',  label: 'Contractor Compliance' },
+    { id: 'attendance',  label: 'Attendance' },
   ];
 
   return (
@@ -2551,6 +2553,13 @@ export default function Dashboard() {
             )}
           </div>
         </>
+      )}
+
+      {dashTab === 'attendance' && (
+        <div className="card">
+          <p className="card__title">Engineer Attendance</p>
+          <AttendanceTab managers={managersList} />
+        </div>
       )}
     </Layout>
   );

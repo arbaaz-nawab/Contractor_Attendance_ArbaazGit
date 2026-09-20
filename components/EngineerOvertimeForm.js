@@ -4,6 +4,7 @@ import { ENGINEERS } from '../lib/config';
 export default function EngineerOvertimeForm() {
   const [engineerName, setEngineerName]       = useState('');
   const [session, setSession]                 = useState(null);  // active overtime session if found
+  const [shiftOpen, setShiftOpen]             = useState(false); // true if engineer has an OPEN shift (blocks starting overtime)
   const [checking, setChecking]               = useState(false);
   const [notes, setNotes]                     = useState('');
   const [workDescription, setWorkDescription] = useState('');
@@ -16,6 +17,7 @@ export default function EngineerOvertimeForm() {
   async function handleEngineerChange(name) {
     setEngineerName(name);
     setSession(null);
+    setShiftOpen(false);
     setResult(null);
     setNotes('');
     setWorkDescription('');
@@ -25,16 +27,19 @@ export default function EngineerOvertimeForm() {
 
     setChecking(true);
     try {
-      const res  = await fetch(
-        `/api/overtime-list?engineer=${encodeURIComponent(name)}&status=ACTIVE`
-      );
-      const data = await res.json();
+      const [overtimeRes, shiftRes] = await Promise.all([
+        fetch(`/api/overtime-list?engineer=${encodeURIComponent(name)}&status=ACTIVE`),
+        fetch(`/api/shift-status?engineerName=${encodeURIComponent(name)}`),
+      ]);
+      const [data, shiftData] = await Promise.all([overtimeRes.json(), shiftRes.json()]);
       const active = data.records?.find(
         (r) => r.engineerName === name && r.status === 'ACTIVE'
       );
       setSession(active || null);
+      setShiftOpen(shiftData?.state === 'OPEN');
     } catch {
       setSession(null);
+      setShiftOpen(false);
     } finally {
       setChecking(false);
     }
@@ -229,6 +234,14 @@ export default function EngineerOvertimeForm() {
 
       {/* ── Sign-in mode: no active session ──────────────────────────────────── */}
       {engineerName && !checking && !session && (
+        shiftOpen ? (
+          <div className="card">
+            <p className="card__title">Start Overtime Session</p>
+            <div className="alert alert--info">
+              You have an open shift. Please sign out of your shift before starting overtime.
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSignIn} noValidate>
           <div className="card">
             <p className="card__title">Start Overtime Session</p>
@@ -253,6 +266,7 @@ export default function EngineerOvertimeForm() {
             {loading ? 'Starting…' : 'START OVERTIME'}
           </button>
         </form>
+        )
       )}
     </div>
   );
