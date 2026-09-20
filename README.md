@@ -1,165 +1,81 @@
 # Contractor Attendance App
 
-A lightweight web application for recording and managing contractor attendance.
-The app allows contractors to log their attendance without requiring login, while managers can view and manage records through a shared Excel file.
+A web application for Goodenough College Estates: contractors sign in/out without a login
+(typically via a QR code at the site entrance), engineers log daily shifts and overtime, and
+managers get a dashboard covering attendance, compliance, parking, and weekly planned works.
 
 ## Features
 
-* No login required for contractors
-* Simple attendance sign-in interface
-* Records stored in Excel file
-* Shared access for managers
-* Real-time attendance logging
-* Easy deployment and local development
-* Built with React / Next.js
+* No login for contractors or engineers — sign in/out from any phone or kiosk
+* Engineer daily shifts (fixed 8h block) separate from overtime, with a calm "why did you leave
+  early" prompt under 8h and automatic flagging + manager correction for a forgotten sign-out
+* Manager dashboard behind a PIN, backed by a real server-side session (not just a client flag)
+* Contractor compliance tracking (RAMS, induction, insurance) with document uploads
+* Parking booking log and a weekly "Planned Works" log with a ready-to-email Excel export
+* Built with React / Next.js, data in Supabase (Postgres + Storage)
 
 ## How It Works
 
-1. Contractors open the web app
-2. Enter required attendance details
-3. Submit attendance
-4. App writes entry to shared Excel file
-5. Managers access the Excel file to review attendance
+1. A contractor scans a QR code (or opens the site URL) and signs in — no account needed
+2. Engineers pick their name and sign in/out of a shift or start overtime
+3. Everything is written straight to Supabase — there is no local file to keep in sync
+4. Managers unlock `/dashboard` with a PIN, which also grants a signed session the API checks on
+   every request — the PIN screen is a login, not just a UI convenience
 
 ## Tech Stack
 
-* React / Next.js
-* Node.js
-* Excel file storage
-* Microsoft Graph API (optional / server-side)
-* REST API routes
+* React / Next.js (Pages Router)
+* Supabase (Postgres database + Storage for photos/documents)
+* Cloudflare R2 (sign-in and overtime/shift photos)
+* Vercel (hosting + a scheduled cron job)
+* `exceljs` for the Planned Works Excel export (merged cells, fills, an embedded logo);
+  `xlsx` for the simpler Monthly Summary export
 
 ## Project Structure
 
 ```
-/app            → UI pages
-/api            → API endpoints
-/scripts        → setup scripts
-/lib            → Excel / data handling
-.env.local      → environment variables
+/pages            → Next.js pages: public sign-in/out (index.js) and the manager dashboard
+/pages/api        → API routes — one file per endpoint
+/components       → React components used by the pages above
+/lib              → Supabase data layer (db.js), config, session auth, UK time helpers
+/styles           → global CSS
+/supabase-schema.sql → hand-maintained database schema (run manually in Supabase)
 ```
 
 ## Clone and Run the Project
 
-Since `node_modules` is not included in this repository, you must install dependencies after cloning.
-
-### 1. Clone the repository
-
 ```bash
-git clone https://github.com/AarzooDhiman/Contractor_attendance.git
-```
-
-### 2. Navigate into the project
-
-```bash
-cd Contractor_attendance
-```
-
-### 3. Install dependencies
-
-This will install all required packages from `package.json`.
-
-```bash
+git clone <this repo's URL>
+cd Contractor_attendance-main
 npm install
-```
-
-### 4. Create environment file
-
-Copy the example file:
-
-```bash
-cp .env.local.example .env.local
-```
-
-Then update values inside `.env.local` as required.
-
-### 5. Run setup script (creates Excel file)
-
-```bash
-node scripts/setup-excel.js
-```
-
-### 6. Start development server
-
-```bash
+cp .env.local.example .env.local   # then fill in the values — see SETUP_GUIDE.md
 npm run dev
 ```
 
-### 7. Open the app
-
-Open in browser:
-
-```
-http://localhost:3000
-```
-
----
+Open [http://localhost:3000](http://localhost:3000). Full setup (Supabase, environment variables,
+Vercel deployment, first-run seed data) is in [SETUP_GUIDE.md](SETUP_GUIDE.md); day-to-day usage
+for engineers and managers is in [USER_GUIDE.md](USER_GUIDE.md).
 
 ## Requirements
 
-Make sure the following are installed:
-
-* Node.js (v18 or later recommended)
-* npm (comes with Node.js)
+* Node.js v18 or later
+* npm
 * Git
+* A Supabase project and a Vercel account (see [SETUP_GUIDE.md](SETUP_GUIDE.md))
 
-Check versions:
+## Documentation
 
-```bash
-node -v
-npm -v
-git --version
-```
+- [CLAUDE.md](CLAUDE.md) — orientation for anyone (human or AI) making code changes
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) — full environment setup, in order
+- [USER_GUIDE.md](USER_GUIDE.md) — plain-English guide for engineers and managers
+- [ARCHITECTURE.md](ARCHITECTURE.md), [DATABASE.md](DATABASE.md),
+  [BUSINESS_RULES.md](BUSINESS_RULES.md) — how it's built and why
+- [SECURITY_AND_DATA.md](SECURITY_AND_DATA.md) — auth model, personal data held, open questions
+- [BACKLOG.md](BACKLOG.md) — known issues and ideas
+- [MEMORY.md](MEMORY.md) — dated log of what's changed and why
 
+## Status
 
-## Getting Started
-
-Install dependencies:
-
-```
-npm install
-```
-
-Run setup script:
-
-```
-node scripts/setup-excel.js
-```
-
-Start development server:
-
-```
-npm run dev
-```
-
-Open in browser:
-
-```
-http://localhost:3000
-```
-
-## Usage
-
-### Contractor
-
-* Open the app
-* Enter attendance details
-* Submit
-
-### Manager
-
-* Open shared Excel file
-* View attendance records
-* Export or analyze data
-
-## Future Improvements
-
-* Manager dashboard
-* Engineer Attendance with Microsoft Login
-* Attendance filtering
-* Export to CSV
-* Date range reports
-* Contractor list management
-* Mobile UI improvements
-
-
+Email alerts (overdue contractors) are currently **dormant** — no verified sending domain exists
+yet, so the code is kept in place but unreferenced; an on-screen banner covers the same need in
+the meantime. See [MEMORY.md](MEMORY.md) for the reasoning and how to revive it.

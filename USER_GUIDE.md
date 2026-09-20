@@ -1,284 +1,207 @@
 # Goodenough College — Contractor Attendance App
-## User Guide & Deployment Instructions
+## User Guide
+
+Plain-English guide, grouped by who's using it. Technical setup is in
+[SETUP_GUIDE.md](SETUP_GUIDE.md).
 
 ---
 
-## What This App Does
+## For Engineers
 
-A web app for Goodenough College Estates staff that:
-- Lets **contractors** sign in and out when visiting site
-- Captures **Health & Safety** checks (RAMS, permits, asbestos, induction, insurance)
-- Lets **Goodenough College staff** log and get overtime approved
-- Gives **managers** a dashboard to see who is on site, view attendance history, manage compliance records, approve overtime, and receive email alerts for overdue contractors
+### Signing in to a shift
 
----
+1. Open the app, tap **Goodenough College Staff**.
+2. Pick your name the first time — your phone remembers it after that (tap **Not you?** to change
+   it).
+3. Tap the big **Shift** button. That's it — you're signed in.
 
-## User Roles
+A shift is a fixed 8-hour block. You don't need to watch a clock or a running timer — the app
+deliberately doesn't show you one.
 
-### 1. Contractor (Sign In / Sign Out)
-Go to the **main page** (`/`).
+### Signing out
 
-**To sign in:**
-1. Tap **Contractor**
-2. Select your **company name** (or type it under "Other")
-3. Wait for the compliance check (green = returning, amber = first visit or expired compliance)
-4. Fill in your **operative name** (autocomplete will suggest returning operatives), **contact number** (UK format: `07700 900000` or `+44 7700 900000`), **3-digit ID** (from your ID card)
-5. Select the **building(s)** you're working in and your **point of contact**
-6. Answer the **Health & Safety questions** (permits, fire safety, asbestos, RAMS, induction, insurance)
-7. Tick the **declaration** and tap **Sign In**
+1. Open the app on the same phone — it already knows you're mid-shift and shows **Sign Out**
+   instead of **Shift**.
+2. Tap it.
 
-**To sign out:**
-1. Tap **Contractor → Sign Out**
-2. Enter your **3-digit ID number**
-3. Describe the work completed
-4. Optionally take or upload a **photo** of completed work
-5. Tap **Sign Out**
+**If it's been 8 hours or more**, you're signed out immediately, no questions asked.
 
----
+**If it's under 8 hours**, you'll see one screen: *"Where did today's time go?"* with a few
+one-tap options — job finished / no more work today, off-site task or training, agreed with your
+manager, an appointment, unwell, or other (with a short optional note). Pick one and confirm.
+There's no lecture and nothing red on this screen — it's just recorded so your manager has
+context later, not a warning.
 
-### 2. Goodenough College Staff (Overtime)
-Go to the **main page** (`/`) and tap **Goodenough College Staff**.
+### If you forget to sign out
 
-**To start overtime:**
-1. Select your name from the list
-2. Tap **Start Overtime**
+If a shift is left open (you forgot, or something came up), the system automatically flags it as
+needing attention at 17:00 UK time that day. You won't be able to sign yourself out of that shift
+after that point — a manager closes it for you from the dashboard (Attendance tab → Live), and
+your hours for that day are set correctly by them, with a short note on what happened. You don't
+need to do anything except let a manager know if it wasn't obvious why.
 
-**To end overtime:**
-1. Select your name
-2. Describe the work you completed
-3. Optionally upload a photo
-4. Tap **End Overtime** — your record goes to your manager for approval
+### Overtime
+
+Overtime is separate from a shift and the two can't overlap — if you try to start overtime while
+a shift is still open (or vice versa), you'll get a message asking you to sign out of the other
+one first. From the same two-button screen, tap **Overtime** instead of **Shift**: pick your name,
+start a session, and later end it with a short description of the work and an optional photo.
+It then goes to your line manager for approval — you'll just see it as pending until they act on
+it.
 
 ---
 
-### 3. Manager (Dashboard)
-Go to `/dashboard` (there is a small link at the bottom of the main page).
+## For Contractors
 
-Enter the **dashboard PIN** (set via `DASHBOARD_PIN` in Vercel environment variables).
+1. Open the app (usually by scanning the QR code at the entrance) and tap **Contractor**.
+2. **To sign in**: pick your company (or type it under "Other"), fill in your name, contact
+   number, and the 3-digit ID from your contractor card, select the building(s) you're working
+   in and your point of contact, answer the Health & Safety questions shown (these adjust based
+   on whether your company/you already have valid paperwork on file), tick the declaration, and
+   submit. Outstanding paperwork (RAMS, induction, insurance) never blocks you from signing in —
+   it's just flagged for the Estates team to chase up.
+3. **To sign out**: enter your 3-digit ID, describe the work completed, optionally add a photo,
+   and confirm.
 
-**Dashboard tabs:**
-
-| Tab | What it shows |
-|-----|---------------|
-| **Contractors** | Who is currently on site + completed visits, with date column. Filter by date range and company. Overdue contractors (past 18:00) are highlighted in red. |
-| **Overtime** | All engineer overtime sessions. Amend or delete records with manager PIN. |
-| **Approvals** | Overtime awaiting your approval — **only for engineers on your own team**. Approve or reject using your manager PIN. One approval marks the record FULLY APPROVED. |
-| **Monthly Summary** | Hours summary per engineer for any month or date range. Export to Excel (3 sheets). |
-| **Weekly Rota** | Assign engineers to duty each week. Included as a sheet in the Monthly Summary Excel export. |
-| **Compliance** | RAMS, induction and insurance dates per company. Upload, view and delete compliance documents. |
-
-**Overdue contractor alerts:**
-- After 18:00, active contractors on site are highlighted red with an **Overdue** badge
-- Click **Force Sign-Out** on any overdue row to close their session (requires manager PIN)
-- Click **Send Overdue Alert** in the filter bar to manually email all managers
-- An automatic email is also sent every weekday at 18:00 UK time via Vercel Cron
-
-**Amending and deleting records:**
-- In the **Contractors** tab, each signed-out record has an **Amend** button — edit work notes, sign-out time, contact details, or delete the entry entirely (requires manager PIN)
-- In the **Overtime** tab, each record has an **Amend / Delete** button (requires manager PIN)
-- In the **Compliance** tab, each company row has a **Delete** button (requires manager PIN)
-
-**Weekly Duty Rota:**
-- Go to the **Weekly Rota** tab and select a month
-- Each calendar week is listed with its date range and any assigned engineers
-- Click **Edit** on a week to open the assignment modal — tick engineers from the list, enter manager name and PIN, then save
-- Week start day can be switched between Sunday and Monday using the dropdown in the filter bar
-- When you export from **Monthly Summary**, the Excel file includes a **Weekly Duty Rota** sheet showing all weeks in the period with their assigned engineers
-
-**Manager PINs** are stored in the Supabase `managers` table — see [Managing Managers](#managing-managers) below. Do not write PINs in this document.
+If you're still signed in from before midnight, tell a manager — they can close your session for
+you from the dashboard.
 
 ---
 
-## Compliance Expiry Rules
+## For Managers / Admin
 
-| Document | Expires after |
-|----------|--------------|
-| RAMS | 6 months from last confirmation |
-| Site Induction | 12 months from last confirmation |
-| Insurance | 12 months from last confirmation |
+Go to `/dashboard` (a small link at the bottom of the main page) and enter the dashboard PIN.
+This does more than unlock the screen — it creates a real, signed login for your browser that
+every dashboard action checks, not just something remembered locally. It lasts until you press
+**Lock**, close the tab, or 24 hours pass, whichever comes first.
 
-When a contractor's compliance expires (or it is their first visit), the sign-in form automatically shows extra H&S questions.
+### Contractors tab
 
----
+Who's on site now and who's signed out, filterable by date range and company. **If anyone is
+still signed in after 18:00**, a calm amber banner appears at the top listing them (name, company,
+building, sign-in time) with a **Force Sign-Out** button right there — you don't need to hunt
+through the table. (There used to be an automatic overdue email; it never actually delivered
+because no sending domain was ever verified, so it's been replaced by this banner — see
+[MEMORY.md](MEMORY.md) if you're curious why.)
 
-## One-Time Setup: Supabase Database
+### Attendance tab (engineer shifts)
 
-Before deploying, run the SQL schema in your Supabase project:
+Three views:
+- **Live** — anyone currently signed into a shift, plus anything flagged **Missing sign-out** at
+  the top with a **Correct** button.
+- **Week** — a small filled bar per engineer per day, showing roughly how much of the 8-hour
+  block they logged that day, for the whole team at a glance.
+- **Month** — a calendar-style heat map per engineer, so a whole month is scannable in a couple
+  of seconds.
 
-1. Go to [supabase.com](https://supabase.com) → your project → **SQL Editor**
-2. Open the file `supabase-schema.sql` from this project
-3. Paste it all in and click **Run**
+**To correct a missing sign-out**: tap **Correct** on the flagged row (Live view, or from a
+capsule/cell in Week or Month view), set the actual sign-out time, add a short note explaining
+what happened, and confirm with your name. The record then shows as complete with your note
+attached.
 
-This creates the following tables and a private storage bucket:
-- `contractor_log` — all sign-in/out records
-- `engineer_overtime` — staff overtime sessions
-- `managers` — manager names, PINs and email addresses
-- `contractor_compliance` — company compliance dates
-- `compliance-docs` storage bucket — uploaded PDF/image documents
+### Compliance tab
 
----
+RAMS, induction, and insurance dates per contractor company: RAMS expires after 6 months,
+induction and insurance after 12. Upload, view, or delete supporting documents per company.
 
-## Deploying to Vercel
+### Parking tab
 
-### Step 1 — Push to GitHub
+A standalone log of parking booked for visiting contractors — separate from the contractor
+sign-in system on purpose, since not every booking corresponds to a sign-in and vice versa.
 
-1. Open **GitHub Desktop**
-2. Click **Add an Existing Repository from your Hard Drive**
-3. Browse to the project folder and click **Add Repository**
-4. Click **Publish repository**
+- **New Booking**: requester, project code, company, date, duration, vehicle registration, and
+  who's entering it — pick from the "Estates staff" list (**Manage Staff** button adds/removes
+  names; removing someone doesn't affect their past bookings).
+- Each booking moves through **Requested → Booked → Completed**, or can be **Cancelled** at any
+  point — nothing is ever hard-deleted, so the record stays traceable.
+- Tap a booking to see its full history (who requested it, who booked it, every edit) and to
+  edit or change its status.
+- **Download Excel** exports whatever's currently filtered/searched.
 
-### Step 2 — Deploy on Vercel
+### Planned Works tab — the weekly rhythm
 
-1. Go to [vercel.com](https://vercel.com) and sign in with your GitHub account
-2. Click **Add New → Project**
-3. Find and select your GitHub repo
-4. Click **Import** — framework will auto-detect as **Next.js**
-5. Add the environment variables listed below
-6. Click **Deploy**
-7. Wait ~2 minutes for the URL to go live
+This mirrors the paper/Excel sheet the Estates team already used, but everyone fills it in
+together during the week instead of one person compiling it at the end.
 
-### Step 3 — Optional: Custom Domain
+1. **Through the week (roughly Wednesday to Friday)**, any of the four Planned Works managers
+   (Arbaaz Nawab, Chris Vasta, Margarita Miller, Sarfraz Arfan) adds rows for the coming week as
+   work gets confirmed — company, description, building, date, who's in charge, and so on. Pick
+   your name once at the top ("Entered by") and it's remembered on that browser.
+2. Opening a new week shows a **Review Last Week** panel at the top listing anything from the
+   previous week that was never marked done. For each, tap **Completed** or **Carry Over** (which
+   copies it into this week with the date cleared, ready to be given a new date) — nothing is
+   silently dropped or auto-copied without you choosing.
+3. A calm tracker shows how many rows each of the four managers has added this week — no
+   red, no "you haven't done anything," just a neutral count.
+4. **On Fridays**, Umayma Chakour downloads the week's Excel file (**Download Excel (Week NN)**
+   button — anyone can click it, it's just labelled as her action) and emails it on herself; this
+   app does not send the email automatically.
+5. Use the search box to find anything from a past week by company, description, building, person
+   in charge, comments, or the parking note — it jumps you straight to that week.
 
-In Vercel → your project → **Settings → Domains** → add your own domain.
+The on-call block (Estate Duty Manager / Call-out engineers) is typed in directly each week — it
+is **not** pulled from the separate Weekly Rota tab, since the two serve different purposes.
 
-### Step 4 — Disable Deployment Protection
+### Overtime — Approvals
 
-By default Vercel requires visitors to log in. To make the site publicly accessible:
+Each engineer has one line manager who approves their overtime (Sarfraz Arfan can additionally
+approve anyone, as a senior override — useful when the usual approver is away). Pick your name at
+the top of the Approvals tab to see only your own team's pending requests; approve or reject with
+your personal PIN. One approval is enough.
 
-1. Vercel → your project → **Settings → Deployment Protection**
-2. Set to **None** and save
+### Weekly Rota
 
----
+Assign engineers to duty per week; separate from — and not shown on — the Planned Works on-call
+block.
 
-## Updating the App
+### Amending and deleting records
 
-Whenever you make code changes:
-```
-git add .
-git commit -m "describe your change"
-git push origin main
-```
-Vercel automatically redeploys within ~2 minutes.
-
----
-
-## Environment Variables Reference
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Your Supabase project URL |
-| `SUPABASE_ANON_KEY` | Yes | Supabase anon/public key |
-| `DASHBOARD_PIN` | Yes | PIN to access the manager dashboard |
-| `RESEND_API_KEY` | Yes (for email alerts) | API key from resend.com |
-| `RESEND_FROM` | Yes (for email alerts) | Sender address e.g. `alerts@yourdomain.com` or `onboarding@resend.dev` |
-| `CRON_SECRET` | Yes (for email alerts) | Any random string — protects the cron endpoint |
-| `NEXT_PUBLIC_APP_TITLE` | No | App title shown in the browser tab |
-| `MANAGER_PINS` | No | Fallback if Supabase managers table is empty. Format: `Name:PIN,Name:PIN` |
-| `APPROVAL_PIN` | No | Universal fallback PIN for all managers |
-| `CF_ACCOUNT_ID` | No | Cloudflare account ID (for R2 photo uploads) |
-| `CF_R2_ACCESS_KEY_ID` | No | Cloudflare R2 access key |
-| `CF_R2_SECRET_ACCESS_KEY` | No | Cloudflare R2 secret key |
-| `CF_R2_BUCKET` | No | R2 bucket name (default: `contractor-photos`) |
-
----
-
-## Managing Managers
-
-Managers are stored in the **Supabase `managers` table** with three columns:
-
-| Column | Description |
-|--------|-------------|
-| `manager_name` | Full name — must match exactly what appears in dropdowns |
-| `manager_pin` | The manager's individual PIN for approvals and amendments |
-| `email` | Email address for overdue contractor alerts (optional) |
-
-To add a new manager:
-1. Go to Supabase → **Table Editor** → `managers`
-2. Insert a new row with their name, PIN and email
-3. The manager will appear in all dropdowns immediately — no code change or redeploy needed
+Most dashboard write actions (amend/delete a contractor record, amend/delete overtime, delete a
+compliance record, approve overtime, confirm the rota) ask for your personal manager PIN as a
+second check, on top of already being logged in. A few (Parking, Planned Works) rely on the
+dashboard login alone — see [SECURITY_AND_DATA.md](SECURITY_AND_DATA.md) if you want the exact
+list.
 
 ---
 
-## Overtime Approval — Teams
+## Managing lists (requires a code change + redeploy, except where noted)
 
-Overtime is approved by the engineer's **own line manager only**. One approval is
-enough — the record goes straight to **FULLY APPROVED**.
-
-| Line manager | Approves overtime for |
-|--------------|----------------------|
-| **Chris Vasta** | David Onyenuforo, Donnel Lewis, Ethan Relf, Krzysztof Niemalec, Louis Ridley-Campbell |
-| **Sarfraz Arfan** | Lukasz Sawicki, Omar Ahmed, Philip Abiodun, Philip Bostock, Slawomir Kwiatkowski, William Owusu |
-| **Sarfraz Arfan** (override) | **Any engineer** — senior line manager; approves on another manager’s behalf when they are on leave |
-
-In the **Approvals** tab a manager only ever sees their own team's records.
-Sarfraz sees every engineer; when he approves someone outside his own team,
-the record is signed `Sarfraz Arfan (Override)` so the override is visible on the
-Excel export and in the dashboard.
-
-Every engineer is assigned to a team. If a new engineer is added to `ENGINEERS`
-without being placed in a team, only Sarfraz Arfan will be able to approve their
-overtime — so add them to a team at the same time.
-
-### Moving an engineer between teams
-
-Edit the `TEAMS` object in [`lib/config.js`](lib/config.js) — cut the engineer's
-name from one array and paste it into the other, then commit and redeploy.
-Each manager also needs a `manager_pin` in the Supabase `managers` table.
-
-To change a PIN: edit the `manager_pin` value directly in the table.
-
----
-
-## Adding or Removing Engineers
-
-Edit [lib/config.js](lib/config.js):
-- `ENGINEERS` — list of staff names shown in the overtime sign-in form
-
-After editing, commit and push — Vercel redeploys automatically.
-
----
-
-## Adding Companies to the Sign-In Dropdown
-
-Edit [components/SignInForm.js](components/SignInForm.js) — find the `COMPANIES` array near the top and add/remove names. There is also an "Other" option that lets contractors type any company name.
+| List | Where | Editable from the dashboard? |
+|---|---|---|
+| Manager names, PINs, emails | Supabase `managers` table | Yes — Table Editor, no redeploy |
+| Parking "Estates staff" | `parking_staff` table | **Yes** — Parking tab → Manage Staff |
+| Planned Works managers / admin | `lib/config.js` | No — code change required |
+| Engineers (shift/overtime) | `lib/config.js` `ENGINEERS` | No — code change required |
+| Overtime teams (who approves whom) | `lib/config.js` `TEAMS` | No — code change required |
+| Contractor company dropdown | `components/SignInForm.js` `COMPANIES` | No — code change required (an "Other" free-text option always exists) |
 
 ---
 
 ## Frequently Asked Questions
 
-**A contractor can't sign in — it says "already signed in today"**
-They must sign out first using their 3-digit ID, or a manager can use the dashboard to force sign-out.
+**A contractor can't sign in — "already signed in today"**
+They (or a manager, via Force Sign-Out) need to sign out first.
 
-**What is the 3-digit ID?**
-It is the number printed on the contractor's physical ID card. It identifies a person uniquely for that day. Range: 001–999.
+**What is the 3-digit contractor ID?**
+The number on their physical ID card, unique for that day only (001–999) — not a permanent
+identity.
 
-**Can two people share an ID?**
-No — only one active session per ID per day is allowed.
+**An engineer's shift shows "Missing sign-out" and they can't sign out themselves**
+Expected once flagged (17:00 UK cutoff) — a manager corrects it from the Attendance tab.
+
+**Why didn't the overdue email arrive?**
+It's currently switched off — see the Contractors tab banner instead. Not a fault to chase.
 
 **Where are photos stored?**
-If Cloudflare R2 is configured, photos are uploaded there and a link is stored in the database. If R2 is not configured, no photo is stored but sign-out still works.
+Cloudflare R2, if configured; otherwise sign-out/shift-out still works, just without a photo.
 
 **Where are compliance documents stored?**
-In Supabase Storage (private bucket: `compliance-docs`). Files are accessible to managers via the Compliance tab → Files button.
+Supabase Storage (private bucket), accessible via the Compliance tab → Files.
 
-**How do I change the dashboard PIN?**
-Update `DASHBOARD_PIN` in Vercel → your project → Settings → Environment Variables, then redeploy.
+**How do I change the dashboard PIN or a manager's personal PIN?**
+Dashboard PIN: `DASHBOARD_PIN` in Vercel env vars, then redeploy. Manager PIN: edit
+`manager_pin` directly in the Supabase `managers` table — takes effect immediately, no redeploy.
 
-**How do I change a manager's PIN?**
-Edit the `manager_pin` value directly in the Supabase `managers` table. No redeploy needed.
-
-**Why did I get "Alert sent to 0 manager(s)"?**
-The `email` column in the Supabase `managers` table is empty. Add email addresses to each manager row.
-
-**The overdue email is not arriving**
-Check: (1) `RESEND_API_KEY`, `RESEND_FROM` and `CRON_SECRET` are set in Vercel env vars and the project has been redeployed. (2) Manager email addresses are filled in the Supabase `managers` table. (3) On Resend's free plan, emails can only be sent to the account owner's email — verify your domain to send to any address.
-
-**The app is deployed but shows a database error**
-Check that you ran `supabase-schema.sql` in your Supabase SQL Editor and that all environment variables are set correctly in Vercel.
-
-**Force Sign-Out shows a server error**
-Run this in Supabase SQL Editor to ensure the amend tracking columns exist:
-```sql
-ALTER TABLE contractor_log ADD COLUMN IF NOT EXISTS amended_by TEXT;
-ALTER TABLE contractor_log ADD COLUMN IF NOT EXISTS amended_at TEXT;
-```
+**How do I add/remove a Planned Works manager?**
+Edit `PLANNED_WORKS_MANAGERS` in `lib/config.js` and redeploy — there's no in-app control for
+this one (unlike the Parking staff list, which is editable live).

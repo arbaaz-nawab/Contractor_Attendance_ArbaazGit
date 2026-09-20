@@ -103,6 +103,7 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('compliance-docs', 'compliance-docs', false)
 ON CONFLICT (id) DO NOTHING;
 
+DROP POLICY IF EXISTS "allow all compliance-docs" ON storage.objects;
 CREATE POLICY "allow all compliance-docs" ON storage.objects
   FOR ALL USING (bucket_id = 'compliance-docs');
 
