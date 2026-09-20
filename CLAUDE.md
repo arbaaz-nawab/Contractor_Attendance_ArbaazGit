@@ -48,12 +48,15 @@ touching any API route) · [BACKLOG.md](BACKLOG.md) (known issues, B-IDs) ·
 - **Time**: always write timestamps via `lib/ukTime.js` (`ukDateString`, `ukDateTimeString`,
   `ukTimeString`) — never `new Date().toISOString()` directly for anything user-facing or stored.
   Be aware reading them back with `new Date(str)` has known DST edge cases (BACKLOG B7).
-- **`lib/db.js` mapper shape**: functions for `contractor_log`, `engineer_overtime`, and
-  `contractor_compliance` return/accept `'Title Case'` keys (legacy Excel column names) — match
-  this shape for those three tables only. Every table added since (`weekly_rota`, `shift_log`,
-  `parking_*`, `planned_works*`, `operative_induction`) uses plain **camelCase** instead — there's
-  no Excel legacy to preserve for them, so don't "fix" them into Title Case for consistency with
-  the wrong precedent.
+- **`lib/db.js` mapper shape**: functions for `contractor_log`, `engineer_overtime`,
+  `contractor_compliance`, and `shift_log` return/accept `'Title Case'` keys — for the first three
+  this preserves the legacy Excel column names; `shift_log` has no such legacy but was written to
+  match that shape anyway (verified against the real mapper/callers 2026-09-20 — this note
+  previously and incorrectly grouped it with the camelCase tables below). Every *other* table added
+  since (`weekly_rota`, `parking_*`, `planned_works*`, `operative_induction`) uses plain
+  **camelCase** instead — there's no Excel legacy to preserve for them, so don't "fix" them into
+  Title Case for consistency with the wrong precedent, and don't "fix" `shift_log` into camelCase
+  either — match each table's own established shape, checking `lib/db.js` if unsure.
 - **Schema changes**: edit `supabase-schema.sql` with `IF NOT EXISTS` guards, run manually in
   Supabase SQL Editor, then update [DATABASE.md](DATABASE.md) — there is no migration tool or
   auto-apply step. See [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md).
@@ -80,5 +83,8 @@ touching any API route) · [BACKLOG.md](BACKLOG.md) (known issues, B-IDs) ·
   only; every API route needs its own server-side check (BACKLOG B2).
 - Never modify `lib/excel.js` to "fix" something — it isn't in use; fix `lib/db.js` instead.
 - Never add secrets, real PINs, or `.env` values into any doc, comment, or commit message.
-- Never assume `getAllRows()`/`getAllOvertimeRows()` return every row once the table is large —
-  no pagination exists yet (BACKLOG B5).
+- Never add a new whole-table or unbounded-filter read in `lib/db.js` without paging it through
+  `fetchAllRows()` — PostgREST caps a single response at `MAX_PAGE_ROWS` (1000) regardless of match
+  count, silently truncating anything larger (BACKLOG B5 — this bit production for real on
+  2026-09-20 once `contractor_log` crossed 1000 rows; fixed the same day, see MEMORY.md). Verify any
+  new one with `scripts/test-pagination.js`.

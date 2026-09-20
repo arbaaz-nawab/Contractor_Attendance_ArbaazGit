@@ -29,11 +29,11 @@ All items below were verified directly against the code on 2026-09-19 (see file:
   will likely fail or silently insert duplicate rows per operative. The caller in
   [pages/api/signin.js:111-114](pages/api/signin.js#L111-L114) swallows the error, so this can be
   failing silently in production today.
-- **B5** — `getAllRows()` and `getAllOvertimeRows()` ([lib/db.js:166-174](lib/db.js#L166-L174),
-  [lib/db.js:325-333](lib/db.js#L325-L333)) call `.select('*')` with no `.limit()`/pagination.
-  Supabase's JS client caps unbounded selects at 1000 rows by default. Once `contractor_log` or
-  `engineer_overtime` passes 1000 rows, the dashboard, exports, and duplicate-ID/company lookups
-  will silently drop older rows.
+- ~~**B5**~~ — RESOLVED 2026-09-20. `getAllRows()`, `getAllOvertimeRows()`, and every other
+  unbounded-list read in `lib/db.js` now page through a shared `fetchAllRows()` helper
+  (`MAX_PAGE_ROWS` = 1000) instead of a bare `.select('*')`. This had already started silently
+  dropping rows in production (`contractor_log` crossed 1000 rows) before the fix — see MEMORY.md
+  2026-09-20 for the incident and `scripts/test-pagination.js` for a re-runnable proof.
 - **B8** — Sign-out and the active-ID check both call `findActiveSession(id, today)`
   ([lib/db.js:202-213](lib/db.js#L202-L213)), which requires `date = today`. A contractor who
   signs in before midnight and is still on site after midnight cannot sign themselves out — the

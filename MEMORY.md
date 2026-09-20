@@ -1043,3 +1043,288 @@ vars above in Vercel Production and Preview; (3) open the branch's Vercel Previe
 smoke-test it for real against production data now that the tables exist; (4) only then merge to
 `main`. Do not merge before (1) and (2) — every new tab/route in this branch will 500 or 401
 without them.
+
+## 2026-09-20, Real E2E test pass against production Supabase (`caiyqhnbztxbnobmdapj`)
+
+Migration `migrations/2026-09-new-features.sql` had been run by the user since the last session —
+all 12 tables confirmed present before any writes. Ran a full local-dev-server + curl + Playwright
+pass across sections A–G of the test plan, writing only `ZZTEST`-tagged rows, cleaned up after.
+No commits, no push, no merge, per instruction.
+
+**Blocker found — dashboard session dies on every reload**: `pages/dashboard.js:1263-1269` clears
+the server session (`fetch('/api/logout', {keepalive:true})`) on the browser's `pagehide` event,
+intending to end the session only when the tab is genuinely closed. `pagehide` also fires on a
+plain reload/navigation-away, so a manager reloading `/dashboard` is logged out and silently
+bounced to the PIN gate — confirmed reproducible with Playwright (`page.reload()` and `page.goto()`
+to the same URL both drop the session cookie entirely; a same-page `fetch()` does not). Ruled out
+Playwright/Chromium/SameSite as the cause: a minimal standalone Node server with an identical
+`SameSite=Strict` session cookie survives the same navigation fine, and switching the app's cookie
+to `SameSite=Lax` did not fix it either — the `pagehide` listener is the actual cause. Contradicts
+CLAUDE.md/BUSINESS_RULES's documented "reload keeps the session" behavior. Not fixed this session
+(a design decision — `pagehide` can't reliably distinguish close-from-reload — belongs to the user,
+not a safe one-line default). [[project_file_map]]
+
+**Live-impacting: BACKLOG B5 (`getAllRows()`/no pagination) has started truncating real data.**
+`contractor_log` is now 1015 rows; `lib/db.js` `getAllRows()` does `.select('*').order('id')` with
+no `.range()`, and Supabase's REST default page size is 1000. A ZZTEST contractor signed in during
+this session (making the table 1016 rows, near/at the cutoff) did not appear in the dashboard's
+"Currently on site" list or trigger the overdue banner — silently dropped by the row cap. This was
+previously a future-proofing warning in BACKLOG.md; it is no longer hypothetical. Recommend
+treating B5 as urgent, not backlog, now that the real table is at/near the threshold.
+
+**Minor**: `scripts/route-audit.sh`'s `trigger-notify|POST|DASHBOARD|{}` line assumes an empty body
+always 400s before any side effect runs; for `trigger-notify` specifically an empty body still
+executes the full handler (queries active contractors, calls `sendOverdueAlerts`). It only 200'd
+harmlessly this run because `RESEND_API_KEY` is unset in `.env.local` — if that var is ever set
+(e.g. email un-dormanted per MEMORY's own "don't wire back in" note) running this script against
+that environment would send a real email. Also flagged: the script's own `check-pin|POST|AUTH|{}`
+case reports a "MISMATCH" for check-pin's correct 401-on-bad-PIN response — a false positive in the
+script's classification, not an app defect.
+
+**Everything else tested and passing** (details not repeated here — see the session's chat
+report): engineer shift/overtime mutual exclusion, 8h/under-8h sign-out + reason-chip requirement,
+stale-OPEN-row auto-flag on new-day sign-in, unique-open-shift DB index, `flag-missing-shifts` cron
+auth (503 unset / 401 wrong / 200 correct, UK-time cutoff correct including BST), manager shift
+correction (session + PIN gated), full route-audit matrix (all DASHBOARD routes 401 with no cookie
+/ 200 with one), Parking (empty-staff prompt, reg normalisation, duplicate-reg warning, status/
+`bookedAt` tracking, update diff + `changedBy` required, formula-injection guard), Planned Works
+(week-placement rules, date range formatting, review/carry-over idempotency, on-call pre-fill,
+Excel export layout — logo, merges, fills, weekend/week row padding, filename format — verified by
+reading the generated workbook with `exceljs`), dashboard PIN gate + Lock, no phone/reason/PIN/
+session leakage in dev-server logs.
+
+**Not verified**: PDF conversion/visual screenshot of the Planned Works export (LibreOffice not
+installed in this environment) — layout was instead verified structurally via `exceljs`. Attendance
+tab's Week/Month sub-views and hover tooltips were not individually exercised (only Live). The
+overdue banner's own show/hide logic could not be observed live end-to-end, for the B5 reason
+above, though the UK-time-not-device-clock computation was confirmed by direct code read.
+
+**Process note — a mistake caught and fixed within this session**: the `contractor_log` cleanup
+delete used `id_number=eq.999`, which also matched three pre-existing rows (ids 132, 358, 360 —
+none created this session) sharing that same test ID number. Caught immediately by the final count
+check (1015 expected, 1012 actual), restored all three from
+`C:\Users\arbaaz.nawab\contractor-signin-backup-2026-09-20\contractor_log.json` with their original
+field values including `id` and `created_at`, and re-verified the count back to exactly 1015.
+Lesson for any future cleanup: filter contractor_log deletes by a ZZTEST-specific field
+(`company_name`/`operative_name`), never by `id_number` alone — it isn't guaranteed unique to one
+test run in this dataset.
+
+**Final row counts (all match the 2026-09-20 backup / pre-run baseline exactly)**: `contractor_log`
+1015, `managers` 4, `engineer_overtime` 20, `contractor_compliance` 12, `weekly_rota` 10; all six
+new-feature tables back to 0. Local-only test scaffolding reverted before finishing: `lib/config.js`
+(temporary `ZZTEST Engineer` entry) and `.env.local` (temporary `CRON_SECRET`) both restored to
+their pre-session content — `git status` clean. Dev server and Playwright's Chromium (installed to
+a scratch temp folder, never added to `package.json`) both stopped/removed.
+
+## 2026-09-20, Fixed both E2E-test blockers; pagination now generic; new checks surfaced one bug
+
+Follow-up session: fixed the two blockers from the E2E pass above, applied the smaller findings,
+and ran the checks that pass couldn't reach (overdue banner + row-cap fix, Attendance Week/Month).
+Same production Supabase, same safety gates re-checked and passed. No commits, no push, no merge.
+
+**Blocker 1 fixed — `pages/dashboard.js`**: removed the `pagehide`-based `/api/logout` call
+(was lines 1263-1269). Verified with Playwright: reload keeps the session (twice in a row), and
+Lock still calls `/api/logout` and returns to the PIN gate correctly — all pass now.
+
+**Blocker 2 fixed — pagination, `lib/db.js`**: added a generic `fetchAllRows(buildQuery)` helper
+(exported `MAX_PAGE_ROWS = 1000`) that pages with `.range()` until a short page is returned, and
+converted every unbounded/whole-table read to use it: `getAllRows` (contractor_log — the one that
+actually bit us), `getAllOvertimeRows`, `getAllComplianceRows`, `findCompanyHistory`,
+`getShiftRowsInRange`, `getParkingBookings`, `getDistinctParkingRequesters`/
+`getDistinctParkingCompanies`, `getKnownContractorCompanies`. `searchPlannedWorks` was left alone —
+its `.limit(200)` is a deliberate search-result cap, not the B5 bug. Added
+`scripts/test-pagination.js`: a re-runnable, mock-only proof (a tiny local HTTP server standing in
+for Supabase's REST API, offset/limit query params) that pagination returns every row across 0-row,
+exactly-one-page, one-page-plus-one, and 3-page cases — no production reads/writes, safe to re-run
+anytime (`node scripts/test-pagination.js`).
+
+**Design decision on the dashboard's own inefficiency (asked for, not just the correctness bug)**:
+`pages/api/dashboard.js` was downloading the *entire* contractor_log table every 60s auto-refresh
+just to filter to (usually) one day in JS. Added `getRowsInDateRange(dateFrom, dateTo, company)` —
+same filter, pushed into the Supabase query (`.gte`/`.lte`/`.ilike`) instead — and switched
+`dashboard.js` to it; output shape is unchanged, this is strictly a "where the filter runs" change.
+Chose this over more invasive options (e.g. a separate always-small "active only" endpoint) because
+it's the smallest change that fixes the actual hot path (every-60s poll, default range = today) and
+keeps the existing custom-range behavior a manager can already pick working identically. Also
+noticed (while reading `getAllRows` call sites) that `amend-contractor.js` downloaded the whole
+table just to find one row by id before writing to it — added `getContractorRowById(id)` (bounded,
+`.eq('id',id).limit(1)`) and swapped it in; same class of fix, low risk, didn't touch its behavior.
+
+**`scripts/route-audit.sh` hardened**: `trigger-notify` now its own `EMAIL` class, probed *only*
+without a cookie (was previously probed with one too — the actual near-miss from the E2E session,
+harmless only because `RESEND_API_KEY` was unset). `notify-overdue`/`flag-missing-shifts` (`CRON`
+class) likewise never probed with a cookie now (cookie was never their real credential anyway).
+Fixed the `check-pin` false-positive: it now sends the *real* `DASHBOARD_PIN` and asserts 200 in
+both the no-cookie and with-cookie case (its real invariant — check-pin is the login route, a 401
+there with valid credentials would be a lockout bug), instead of wrongly expecting it to behave
+like a public route that should never 401. Added a required `I_CONFIRM_THIS_IS_A_DEV_SERVER=yes`
+env guard before the script does anything else.
+
+**`CLAUDE.md` corrected**: the mapper-shape note wrongly grouped `shift_log` with the camelCase
+tables — it actually uses Title Case, same as contractor_log/engineer_overtime/
+contractor_compliance (verified against the real mapper in `lib/db.js` and its callers). Fixed the
+note to say so and to point at `lib/db.js` as the source of truth if ever unsure again.
+
+**Check A — overdue banner + "Currently on site" with the row-cap fix, PASSED live**: signed in one
+ZZTEST contractor via the real `/api/signin` (real UK time was already past 18:00, so no backdating
+needed) — id 1026. With the pagination fix in place it correctly appeared in "Currently on site"
+and triggered the amber overdue banner (this exact scenario silently failed before the fix, per the
+prior entry). Force Sign-Out (real manager name + PIN via the dashboard modal) succeeded, and the
+banner correctly disappeared once no one was overdue. One minor side-observation, not fixed (out of
+scope for this session): the Force Sign-Out modal's default sign-out time is "today 18:00", which
+is *before* this contractor's actual 20:00 sign-in — the resulting row shows a blank Duration
+rather than a negative one, a small display edge case worth a look sometime, not urgent.
+
+**Check B — Attendance Week/Month, mostly clean, one new bug found**: inserted 5 tagged shift_log
+rows (complete 8h, complete under-8h with a reason, MISSING_SIGNOUT, a weekend-dated shift, and a
+manager-corrected row) and screenshotted Live/Week/Month at 375px and 1280px. Readability: strong —
+the Week "skyline" and Month heat-map are both easy to scan, weekend days are visibly muted, the
+missing-signout stripe pattern is distinct, and the hover tooltip (desktop) is clear and correctly
+shows the reason + note. **Found a real bug**: tapping (not hovering) a Week-view capsule throws
+`Cannot read properties of null (reading 'getBoundingClientRect')` from `buildTooltip` at
+`components/AttendanceTab.js:325` (`e.currentTarget.getBoundingClientRect()`) — the tooltip never
+appears on tap, and in this dev environment it visibly triggered Next's red error overlay. Capsules
+carry both `onClick` and `onMouseEnter` calling the same `buildTooltip(e, ...)`; on a touch tap
+Chromium fires both in quick succession and by the time the second event's handler runs,
+`e.currentTarget` is null. Reproduced twice (main check script and an isolated debug script) but
+**not confirmed on real touch hardware** — Playwright's synthetic `.tap()` may not perfectly match
+a real phone's event sequence, so this is reported, not fixed; worth a real-device check before
+prioritizing, and if real, the fix is probably capturing the target synchronously (or reading
+`e.target.closest('.attn-capsule')`) rather than trusting `currentTarget` across the two handlers.
+Not in this session's fix list, so left alone.
+
+**Check C**: LibreOffice still not installed in this environment — PDF export/screenshot skipped,
+as last time.
+
+**Privacy mistake caught mid-session, fixed immediately**: the first overdue-banner screenshot
+(full-page, desktop) was taken before realizing the Contractors tab's "Signed Out" list below the
+ZZTEST banner shows *today's real contractors* — names and phone numbers. Deleted all 4 screenshots
+from that run and retook a clean one after filtering the company box to "ZZTEST". Same issue nearly
+recurred for the Attendance Month view (which has no equivalent filter): switched to
+element-scoped `locator.screenshot()` crops (Week: computed clip from the first ZZTEST row to grid
+bottom; Month: each ZZTEST engineer already has its own `.attn-month-block` container to crop to)
+so no real engineer's data was ever captured. Lesson for next time: assume any full-page dashboard
+screenshot contains real data unless a filter or crop specifically rules it out — check before
+shooting, not after.
+
+**Delete-by-id discipline (per this session's explicit instruction, after last time's near-miss)**:
+every row created this session was recorded by exact id at insert time (`contractor_log` 1026;
+`shift_log` 7,8,9,10,11), each id set was SELECTed and printed to confirm it was ZZTEST-tagged
+immediately before its DELETE, and no delete ever filtered on a non-unique field. All 6 confirmed
+ZZTEST before deletion; all 6 deleted successfully.
+
+**Read-only backup comparison (this session's explicit ask)**: row counts for all 12 tables match
+the 2026-09-20 backup / previous session's baseline exactly (`contractor_log` 1015, `managers` 4,
+`engineer_overtime` 20, `contractor_compliance` 12, `weekly_rota` 10, all six new-feature tables 0).
+Went further than counts: diffed full content of `managers`, `engineer_overtime`,
+`contractor_compliance`, and `weekly_rota` against their backup JSON files — byte-for-byte
+identical, no drift. Specifically re-verified the three `contractor_log` rows restored last session
+(ids 132, 358, 360) field-by-field against the backup — identical, including `created_at`. No
+residue found from either session's cleanup.
+
+**Cleanup**: `lib/config.js`'s temporary 5-name ZZTEST override (added for the Week/Month check)
+reverted before finishing — `git status` shows only the intended fix files plus this MEMORY.md
+entry and the new `scripts/test-pagination.js`. Dev server and its port stopped; `.next` cache
+cleared.
+
+## 2026-09-20, Branch finalised: tap-tooltip fix, Force Sign-Out validation, equivalence proof, pushed
+
+Follow-up session: fixed the tap-tooltip crash, resolved the Force Sign-Out edge case, proved the
+new date-filter is equivalent to the old one on real data, found and fixed a real regression while
+testing row-by-id lookup, then committed and pushed the whole branch. Same production Supabase,
+safety gates re-checked and passed.
+
+**Tap-tooltip bug fixed — `components/AttendanceTab.js`**: root cause confirmed as suspected —
+`buildTooltip(e, ...)` was called *inside* a `setTooltip((prev) => ...)` updater function, so
+`e.currentTarget` was read lazily rather than during the event's synchronous dispatch window; by
+the time React actually invoked that updater, `currentTarget` had already been reset to null.
+Fixed by extracting `getBoundingClientRect()` into a plain `{x, y}` synchronously, as the first
+thing every handler does, before any `setTooltip` call — nothing downstream ever touches the event
+or a DOM node reference again. Also, per this session's ask: capsules are now focusable
+(`tabIndex`, `role="button"`, `aria-label`) with an `onFocus` handler sharing the same show logic
+as hover/click, so keyboard users get the tooltip too; and activation no longer toggles closed on
+a second tap/click of the *same* cell (a likely contributor to the original bug, since a touch tap
+can fire both `mouseenter` and `click` for one gesture) — only an outside tap/click or activating a
+different cell changes what's shown. Verified with Playwright: 13/13 checks pass — hover, tap
+(no crash, correct content), keyboard focus, second-tap-same-cell no-close, and outside-tap/click
+close, at both 1280px (mouse) and 375px (touch emulation), using one tagged `shift_log` row.
+
+**Force Sign-Out edge case — described, safe part fixed, design part left as options**:
+*What's wrong*: the modal's default sign-out time is a fixed "today 18:00" with no lower bound.
+*When*: any contractor whose real sign-in was after 18:00 and whose manager doesn't edit the
+default before confirming. *Impact*: silently wrote a sign-out time before the sign-in time —
+`calcDuration()` returns `'-'` for any non-positive duration, so the row looked blank rather than
+visibly wrong, and nothing else flagged it. Fixed the safe part: `amend-contractor.js`'s
+`forceSignOut` now rejects `signOutTime <= Sign-In Time` with a 400 (identical message and pattern
+to the check `shift-correct.js` already applies to its own manager correction) — tested both the
+rejection and that a legitimate later time still succeeds. Left the *default pre-fill value* itself
+alone — that's a genuine design choice, not a bug — with two options for the user: (1) default to
+"now" instead of a fixed 18:00 — always valid, but loses the convenient "typical end of day" default
+for the common case; (2) default to `max(18:00, signInTime + a few minutes)` — keeps the convenient
+default for everyone who signed in before 18:00 (the overwhelming majority) and only changes
+behaviour for the edge case that was actually broken. Recommend (2).
+
+**Date-filter equivalence proof — `scripts/verify-date-filter-equivalence.js` (new, read-only)**:
+compares `getRowsInDateRange()` against a faithful JS reproduction of the exact old
+`getAllRows()` + filter logic it replaced, for today, yesterday, this week (Mon-Sun), this month,
+a range spanning the 25 Oct 2026 BST→GMT change, a range spanning the 29 Mar 2026 GMT→BST change,
+and single days at a real month's start and end (2026-08-01, 2026-08-31) — all 8 cases returned
+identical row-id sets against the real 1015-row `contractor_log` (run live, output kept in this
+session's transcript). UK-local-vs-UTC boundary: no `contractor_log` row currently has a UK
+sign-in time in 00:00-00:59 (the window where the UK calendar date and the UTC calendar date of
+the same instant diverge during BST), so there was nothing to check empirically — verified
+analytically instead: `date` and `sign_in_time` are `TEXT` columns (supabase-schema.sql), always
+written via `ukDateString()`/`ukDateTimeString()`, and both the old and new filters compare them as
+plain strings — neither ever re-parses into a Date/timestamp, so there's no code path for a
+UTC-reinterpretation bug to hide in regardless of what the data contains. The script checks for
+such rows itself and will report on them automatically if the data ever has any.
+
+**Regression found and fixed while testing row-by-id lookup (Task 4 of this session) —
+`amend-contractor.js`**: a non-numeric `rowId` (e.g. `"abc"`) used to fall through cleanly to a 404
+under the old `getAllRows().find(r => r._row === Number(rowId))` lookup, because `NaN` never
+matches. The `getContractorRowById(Number(rowId))` swap from the previous session broke this: `NaN`
+reaches Postgres as the literal string `"NaN"` for a `bigint` column and throws, surfacing as an
+unhandled 500. Fixed by validating `Number.isFinite(rowId)` once, up front, before any DB call,
+returning a clean 400 — re-tested all three cases (valid id, missing id, non-numeric id) and all
+now behave correctly (200/404/400 respectively, no crash).
+
+**A real mistake made and fixed within this session**: while probing edge cases for the row-by-id
+fix, a throwaway test used `rowId: "1.5e2"` (intended as "a weird-but-numeric string") without
+checking first whether id 150 was a real row — it is, a real contractor (Iulian Busuioc), and the
+test's `forceSignOut` call actually force-signed them out for real, overwriting
+`sign_out_time`/`work_completed`/`amended_by`/`amended_at`. Caught immediately by comparing the row
+against the backup, restored all four fields to their exact original values (verified
+byte-for-byte identical afterward), and re-ran the remaining Task 4 checks using only ids already
+known to be safe (a tagged ZZTEST row, and a deliberately-nonexistent id). Lesson: never invent a
+"clever" edge-case id without confirming first — by reading it, not guessing — that it can't
+collide with a real row.
+
+**Docs**: `CLAUDE.md`'s "Never" section updated — the B5 pagination warning was stale (fixed the
+previous session) and now points at `fetchAllRows()`/`scripts/test-pagination.js` instead. Also
+fixed a broken `[BACKLOG.md](BACKLOG.md)` markdown link in the folder-map section that an earlier
+session's edit had accidentally split across lines. `BACKLOG.md`'s B5 entry marked resolved with a
+pointer to this fix. `scripts/route-audit.sh`'s usage comment line was also touched (harmless —
+the `DASHBOARD_PIN=1234` in it is the script's own generic placeholder example, not a real PIN;
+checked specifically before committing, see below).
+
+**Pre-commit safety checks (all clean)**: grepped every changed file's diff for phone-number
+patterns and secret-looking strings — nothing found (the one hit, `DASHBOARD_PIN=1234` in
+`route-audit.sh`'s own usage-example comment, is a placeholder, not a real value). Confirmed no
+screenshot, backup, or `.env*` file was ever staged.
+
+**Commits** (feature/shift-parking-planned-works, pushed to origin, no merge to main):
+- (h) pagehide/session fix — `pages/dashboard.js`
+- (i) generic paging helper + SQL date filter — `lib/db.js`, `pages/api/dashboard.js`
+- (j) attendance tooltip fix + Force Sign-Out/row-lookup fixes — `components/AttendanceTab.js`,
+  `pages/api/amend-contractor.js`
+- (k) audit script, tests, docs, MEMORY.md — `scripts/route-audit.sh`,
+  `scripts/test-pagination.js`, `scripts/verify-date-filter-equivalence.js`, `CLAUDE.md`,
+  `BACKLOG.md`, `MEMORY.md`
+
+**Final row counts / backup comparison (all clean)**: `contractor_log` 1015, `managers` 4,
+`engineer_overtime` 20, `contractor_compliance` 12, `weekly_rota` 10, all six new-feature tables 0
+— matches backup exactly. Content-diffed `managers`/`engineer_overtime`/`contractor_compliance`/
+`weekly_rota` byte-for-byte against backup: identical. Specifically re-verified all four
+previously-touched `contractor_log` rows (132, 150, 358, 360) byte-for-byte against backup:
+identical, including the row restored after this session's own mistake. `lib/config.js`'s
+temporary ZZTEST override reverted before committing.
