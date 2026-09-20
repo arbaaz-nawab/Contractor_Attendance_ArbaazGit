@@ -224,3 +224,49 @@ CREATE TABLE IF NOT EXISTS parking_history (
 ALTER TABLE parking_history DISABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_all_parking_history" ON parking_history;
 CREATE POLICY "allow_all_parking_history" ON parking_history FOR ALL USING (true) WITH CHECK (true);
+
+-- ── 11. Planned Works (Estates weekly planned-works sheet) ──────────────────
+-- Standalone: no link to parking_bookings, contractor_log, or weekly_rota.
+CREATE TABLE IF NOT EXISTS planned_works (
+  id                   BIGSERIAL PRIMARY KEY,
+  week_start           TEXT NOT NULL,
+  company_name         TEXT NOT NULL,
+  description          TEXT NOT NULL,
+  building_name        TEXT,
+  start_date           TEXT,
+  end_date             TEXT,
+  location             TEXT,
+  person_in_charge     TEXT,
+  rams_signed_off      TEXT,
+  events_team_notified TEXT,
+  parking_required     TEXT,
+  comments             TEXT,
+  added_by             TEXT NOT NULL,
+  created_at           TEXT,
+  last_edited_by       TEXT,
+  last_edited_at       TEXT,
+  review_status        TEXT NOT NULL DEFAULT '',
+  carried_from_id      BIGINT,
+  deleted_at           TEXT
+);
+ALTER TABLE planned_works DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_planned_works" ON planned_works;
+CREATE POLICY "allow_all_planned_works" ON planned_works FOR ALL USING (true) WITH CHECK (true);
+
+-- One row per on-call line (Estate Duty Manager / Call-out engineers), full
+-- replace on save per week (same pattern as weekly_rota.setRotaWeek).
+CREATE TABLE IF NOT EXISTS planned_works_oncall (
+  id          BIGSERIAL PRIMARY KEY,
+  week_start  TEXT NOT NULL,
+  group_name  TEXT NOT NULL,
+  line_order  INT NOT NULL DEFAULT 0,
+  date_from   TEXT,
+  date_to     TEXT,
+  person_name TEXT,
+  phone       TEXT,
+  updated_by  TEXT,
+  updated_at  TEXT
+);
+ALTER TABLE planned_works_oncall DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_planned_works_oncall" ON planned_works_oncall;
+CREATE POLICY "allow_all_planned_works_oncall" ON planned_works_oncall FOR ALL USING (true) WITH CHECK (true);

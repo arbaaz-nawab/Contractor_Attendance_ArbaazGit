@@ -5,6 +5,7 @@ import { MANAGERS, APPROVERS, ENGINEERS, WEEK_START_DAY, TEAMS, OVERRIDE_APPROVE
 import * as XLSX from 'xlsx';
 import AttendanceTab from '../components/AttendanceTab';
 import ParkingTab from '../components/ParkingTab';
+import PlannedWorksTab from '../components/PlannedWorksTab';
 import { dashFetch } from '../lib/sessionClient';
 
 // Format datetime for display: "09:30"
@@ -1531,6 +1532,7 @@ export default function Dashboard() {
     { id: 'compliance',  label: 'Contractor Compliance' },
     { id: 'attendance',  label: 'Attendance' },
     { id: 'parking',     label: 'Parking' },
+    { id: 'plannedworks', label: 'Planned Works' },
   ];
 
   return (
@@ -2568,6 +2570,13 @@ export default function Dashboard() {
         <div className="card">
           <p className="card__title">Parking</p>
           <ParkingTab />
+        </div>
+      )}
+
+      {dashTab === 'plannedworks' && (
+        <div className="card">
+          <p className="card__title">Planned Works</p>
+          <PlannedWorksTab />
         </div>
       )}
     </Layout>

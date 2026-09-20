@@ -795,3 +795,71 @@ tbody tr:hover { background: var(--bg-subtle); }
   padding: 0;
 }
 .parking-staff-chip button:hover { color: var(--danger); }
+
+/* ── Planned Works tab ───────────────────────────────────────────────────────── */
+.pw-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.pw-nav__label { font-weight: 600; font-size: 0.9rem; color: var(--text); }
+
+.pw-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  background: var(--bg);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.pw-row:hover { border-color: var(--accent); background: var(--accent-light); }
+.pw-row__date { font-weight: 700; font-size: 0.8125rem; min-width: 90px; }
+.pw-row__main { flex: 1; min-width: 200px; }
+.pw-row__company { font-weight: 600; }
+.pw-row__sub { font-size: 0.8rem; color: var(--text-secondary); }
+.pw-row__meta { font-size: 0.75rem; color: var(--text-muted); }
+
+.pw-review-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.pw-review-row:last-child { border-bottom: none; }
+
+.pw-tracker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.pw-tracker__chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  background: var(--bg);
+  min-width: 140px;
+}
+
+.pw-oncall-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.pw-oncall-line input[type="date"] { flex: 1 1 130px; }
+.pw-oncall-line input[type="text"],
+.pw-oncall-line input[type="tel"] { flex: 1 1 140px; }
