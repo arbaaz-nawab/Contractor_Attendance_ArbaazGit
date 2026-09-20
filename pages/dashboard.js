@@ -1256,17 +1256,13 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Best-effort: clear the server session when the tab is actually closed or
-  // navigated away from. This is NOT the auto-lock-on-tab-switch behaviour
-  // that was deliberately removed (see MEMORY.md) — it only fires on a real
-  // unload, not on merely switching tabs or backgrounding this one.
-  useEffect(() => {
-    function onPageHide() {
-      try { fetch('/api/logout', { method: 'POST', keepalive: true }).catch(() => {}); } catch { /* ignore */ }
-    }
-    window.addEventListener('pagehide', onPageHide);
-    return () => window.removeEventListener('pagehide', onPageHide);
-  }, []);
+  // No pagehide-based logout here (removed 2026-09-20): the `pagehide` event
+  // fires on a plain reload/navigation, not just a real tab close, so this
+  // was logging managers out on every refresh (see MEMORY.md). The session
+  // cookie has no Max-Age — it's a true browser session cookie that already
+  // ends when the browser closes — so no client-side "clear on unload" is
+  // needed; Lock (below) remains the explicit, user-initiated way to end a
+  // session early.
 
   useEffect(() => {
     if (!unlocked) return;
