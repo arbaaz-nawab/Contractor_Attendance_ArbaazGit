@@ -982,3 +982,64 @@ every file about to be committed before the first commit was made — nothing fo
 
 No `main`-branch changes, no push, no merge — all per instruction. Branch name:
 `feature/shift-parking-planned-works`.
+
+## 2026-09-20, Production backup, migration file, and branch pushed
+
+**Important correction, caught this session**: the Supabase project at `caiyqhnbztxbnobmdapj`
+(the one `.env.local` has always pointed at) was confirmed by the user in the *previous* session
+as "the test project" — that was wrong. This session the user clarified they only have two
+Supabase projects total, both already in use, and confirmed directly that `caiyqhnbztxbnobmdapj`
+**is production**. The previous session's E2E test-plan turn stopped itself before writing any
+data (required tables were missing, so it halted at the read-only table-existence check per its
+own safety instructions) — so no test/ZZTEST data was ever written to production. No harm done,
+but the earlier "test project" MEMORY framing needs to be read as superseded: there is no separate
+disposable test project for this app. Any future "run a real E2E test" request needs a real answer
+to where that should safely happen (a fresh throwaway Supabase project, most likely) before it can
+proceed past the safety checks the same way this one didn't.
+
+**Backup taken** (read-only, confirmed): `scripts/backup-tables.js` (new, committed — no
+hardcoded env-specific values, reads `.env.local`/shell env same as the app) against confirmed-
+production `caiyqhnbztxbnobmdapj`. Folder: `C:\Users\arbaaz.nawab\contractor-signin-backup-
+2026-09-20` (outside the repo, confirmed by the script's own guard and by hand). Row counts:
+`contractor_log` 1015, `managers` 4, `engineer_overtime` 20, `contractor_compliance` 12,
+`weekly_rota` 10, `operative_induction` **not present** (confirms the earlier test-project finding
+also holds on production — this table has never been migrated there either). Contains personal
+data (contractor/operative names, contact numbers) — user was told to keep it private and delete
+it once no longer needed.
+
+**SQL safety review of `supabase-schema.sql`**: no `DROP TABLE`, `TRUNCATE`, bare `DELETE`/
+`UPDATE`, `DROP COLUMN`, or `ALTER COLUMN ... TYPE` anywhere (checked by direct grep, not just
+reading). Every statement is `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` /
+`ADD COLUMN IF NOT EXISTS` / idempotent `DISABLE ROW LEVEL SECURITY`, or a `DROP POLICY IF EXISTS`
+immediately paired with an identical `CREATE POLICY`. Two of the eight drop-and-recreate policy
+pairs touch objects that already hold live production data today — `storage.objects` (the
+`compliance-docs` bucket's policy) and `weekly_rota` — but both only re-assert an identical
+access policy, never touch rows. Verdict: safe to run on production, nothing destructive found.
+
+**Migration file**: `migrations/2026-09-new-features.sql` (new, committed) — the additive-only
+subset of `supabase-schema.sql`: `operative_induction` (included per the confirmed-missing finding
+above), `shift_log` (+ partial unique open-shift index + `correction_note`), `parking_bookings`,
+`parking_staff` (+ unique name index), `parking_history`, `planned_works`, `planned_works_oncall`,
+and the `compliance-docs` storage-policy idempotency fix. Deliberately excludes `weekly_rota` and
+the original five tables' own `ADD COLUMN` statements — those already exist on production and
+aren't part of "new features," per the task's explicit file list.
+
+**Pushed**: `feature/shift-parking-planned-works` → `origin`, commit `121102c` ("Add production
+backup script and paste-ready new-features migration"). No push to `main`, no merge — GitHub
+offered a PR-creation link, not used. Branch now has 8 commits total (the 7 from the previous
+session plus this one).
+
+**Env vars**: every `process.env.*` referenced in `pages/`+`lib/` matches `.env.example` exactly
+(13 vars), aside from the two already-documented exceptions (`EXCEL_FILE_PATH`, dead code only;
+`NODE_ENV`, Vercel sets it automatically). Required in Vercel Production **and** Preview before
+merge: `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_ANON_KEY`, `DASHBOARD_PIN`, `SESSION_SECRET`,
+`CRON_SECRET` (the last two didn't exist before this branch's session-auth and fail-closed-cron
+work). Optional: `MANAGER_PINS`, `APPROVAL_PIN`, the four `CF_*` R2 vars, `RESEND_API_KEY`/
+`RESEND_FROM` (dormant).
+
+**Deployment order for this branch, once ready**: (1) run `migrations/2026-09-new-features.sql`
+in the Supabase SQL Editor against production — user does this manually; (2) set/confirm the env
+vars above in Vercel Production and Preview; (3) open the branch's Vercel Preview deployment and
+smoke-test it for real against production data now that the tables exist; (4) only then merge to
+`main`. Do not merge before (1) and (2) — every new tab/route in this branch will 500 or 401
+without them.
