@@ -7,8 +7,9 @@
  *   Replaces all assignments for the given week. Requires manager PIN.
  */
 import { getRotaEntries, setRotaWeek, getManagerPin } from '../../lib/db';
+import { requireSession } from '../../lib/session';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method === 'GET') {
     const { from, to } = req.query;
     try {
@@ -53,3 +54,5 @@ export default async function handler(req, res) {
 
   return res.status(405).json({ success: false, message: 'Method not allowed' });
 }
+
+export default requireSession(handler);

@@ -5,8 +5,9 @@
  */
 import { getAllRows } from '../../lib/db';
 import { ukDateString, calcDuration } from '../../lib/ukTime';
+import { requireSession } from '../../lib/session';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
@@ -90,3 +91,5 @@ export default async function handler(req, res) {
     });
   }
 }
+
+export default requireSession(handler);
