@@ -333,8 +333,12 @@ html, body {
 
 .badge--active   { background: var(--success-light);   color: var(--success); }
 .badge--completed { background: var(--bg-subtle); color: var(--text-secondary); }
+.badge--requested { background: var(--warning-light); color: #92400e; }
+.badge--booked    { background: var(--accent-light);  color: var(--accent-dark); }
+.badge--cancelled { background: var(--bg-subtle); color: var(--text-muted); text-decoration: line-through; }
 
-.badge--active::before, .badge--completed::before {
+.badge--active::before, .badge--completed::before,
+.badge--requested::before, .badge--booked::before, .badge--cancelled::before {
   content: '';
   width: 6px;
   height: 6px;
@@ -740,3 +744,54 @@ tbody tr:hover { background: var(--bg-subtle); }
 .attn-heat-3 { background: #60a5fa; color: #fff; cursor: pointer; }
 .attn-heat-4 { background: #2563eb; color: #fff; cursor: pointer; }
 .attn-cal-cell__num { pointer-events: none; }
+
+/* ── Parking tab ─────────────────────────────────────────────────────────────── */
+.parking-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  background: var(--bg);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.parking-row:hover { border-color: var(--accent); background: var(--accent-light); }
+
+.parking-row__date { font-weight: 700; font-size: 0.875rem; min-width: 84px; }
+.parking-row__main { flex: 1; min-width: 180px; }
+.parking-row__company { font-weight: 600; }
+.parking-row__sub { font-size: 0.8rem; color: var(--text-secondary); }
+
+.parking-timeline { display: flex; flex-direction: column; gap: 10px; margin: 4px 0; }
+.parking-timeline__item {
+  padding-left: 14px;
+  border-left: 2px solid var(--border-strong);
+  font-size: 0.8125rem;
+}
+.parking-timeline__when { color: var(--text-secondary); font-size: 0.75rem; }
+
+.parking-staff-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.parking-staff-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  font-size: 0.8125rem;
+}
+.parking-staff-chip button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.875rem;
+  line-height: 1;
+  padding: 0;
+}
+.parking-staff-chip button:hover { color: var(--danger); }

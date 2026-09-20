@@ -172,3 +172,55 @@ CREATE UNIQUE INDEX IF NOT EXISTS shift_log_one_open_per_engineer_idx
 -- Manager's note when correcting a MISSING_SIGNOUT (or forgotten OPEN) shift
 -- from the dashboard Attendance tab.
 ALTER TABLE shift_log ADD COLUMN IF NOT EXISTS correction_note TEXT;
+
+-- ── 9. Parking tab (Estates log of parking booked for external contractors) ──
+-- Standalone: deliberately no FK/link to contractor_log.
+CREATE TABLE IF NOT EXISTS parking_bookings (
+  id             BIGSERIAL PRIMARY KEY,
+  requester      TEXT NOT NULL,
+  project_code   TEXT NOT NULL,
+  company        TEXT NOT NULL,
+  booking_date   TEXT NOT NULL,
+  duration_type  TEXT NOT NULL,
+  vehicle_reg    TEXT NOT NULL,
+  booked_by      TEXT NOT NULL,
+  requested_at   TEXT,
+  booked_at      TEXT,
+  status         TEXT NOT NULL DEFAULT 'Requested',
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE parking_bookings DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_parking_bookings" ON parking_bookings;
+CREATE POLICY "allow_all_parking_bookings" ON parking_bookings FOR ALL USING (true) WITH CHECK (true);
+
+-- Editable "Estates staff" list for the requester/entered-by pickers.
+-- Removing a name sets active=false (soft) — bookings store names as plain
+-- text snapshots, never a foreign key, so removing a name never touches
+-- historical rows.
+CREATE TABLE IF NOT EXISTS parking_staff (
+  id         BIGSERIAL PRIMARY KEY,
+  name       TEXT NOT NULL,
+  active     BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS parking_staff_name_idx ON parking_staff (lower(trim(name)));
+ALTER TABLE parking_staff DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_parking_staff" ON parking_staff;
+CREATE POLICY "allow_all_parking_staff" ON parking_staff FOR ALL USING (true) WITH CHECK (true);
+
+-- One row per create/edit/status-change/cancel on a booking. `changes` is a
+-- JSON-encoded array of {field, old, new} (TEXT, not JSONB — matches this
+-- schema's existing all-TEXT-payload convention rather than introducing a
+-- new column type just for this one table).
+CREATE TABLE IF NOT EXISTS parking_history (
+  id          BIGSERIAL PRIMARY KEY,
+  booking_id  BIGINT NOT NULL,
+  changed_by  TEXT NOT NULL,
+  changed_at  TEXT NOT NULL,
+  change_type TEXT NOT NULL,
+  changes     TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE parking_history DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_parking_history" ON parking_history;
+CREATE POLICY "allow_all_parking_history" ON parking_history FOR ALL USING (true) WITH CHECK (true);
