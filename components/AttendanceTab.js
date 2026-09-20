@@ -321,21 +321,35 @@ export default function AttendanceTab({ managers = [] }) {
     refetchCurrentRange();
   }
 
-  function buildTooltip(e, rec, label) {
-    const rect = e.currentTarget.getBoundingClientRect();
+  // Position is read from the cell's DOM rect and turned into plain numbers
+  // immediately, synchronously, before setTooltip is ever called. A
+  // SyntheticEvent's currentTarget is only valid while React is actively
+  // dispatching that event — reading it lazily inside a setState updater
+  // (the previous shape) can run on a later tick (batching, Strict Mode's
+  // double-invoke), by which point currentTarget reads as null. Capturing
+  // the rect here and passing only numbers into state sidesteps that
+  // entirely; nothing downstream ever touches the event or the DOM node.
+  function showTooltip(el, rec, label) {
+    const rect = el.getBoundingClientRect();
     const maxX = (typeof window !== 'undefined' ? window.innerWidth : 400) - 120;
     const x = Math.min(Math.max(rect.left + rect.width / 2, 120), Math.max(120, maxX));
     const y = rect.bottom + 8;
-    return { rec, x, y, label };
+    setTooltip({ rec, x, y, label });
   }
 
-  function handleCellClick(e, rec, label) {
+  // Shared by click (mouse and touch-tap both fire this), hover, and
+  // keyboard focus. Deliberately does not toggle closed on a repeat
+  // activation of the same cell — it just (re)shows it — so a second tap on
+  // the same cell is a harmless no-op rather than a close. The only way to
+  // dismiss is activating a different cell or the outside-tap/click listener
+  // below.
+  function handleCellActivate(e, rec, label) {
     e.stopPropagation();
-    setTooltip((prev) => (prev && prev.rec === rec ? null : buildTooltip(e, rec, label)));
+    showTooltip(e.currentTarget, rec, label);
   }
 
   function handleCellHover(e, rec, label) {
-    setTooltip(buildTooltip(e, rec, label));
+    showTooltip(e.currentTarget, rec, label);
   }
 
   const recordMap = {};
@@ -351,25 +365,35 @@ export default function AttendanceTab({ managers = [] }) {
     }
 
     if (rec.status === 'MISSING_SIGNOUT') {
+      const missingLabel = `${eng} — Missing sign-out`;
       return (
         <div
           key={dateStr}
           className="attn-capsule attn-capsule--missing"
-          onClick={(e) => handleCellClick(e, rec, `${eng} — Missing sign-out`)}
-          onMouseEnter={(e) => handleCellHover(e, rec, `${eng} — Missing sign-out`)}
+          tabIndex={0}
+          role="button"
+          aria-label={missingLabel}
+          onClick={(e) => handleCellActivate(e, rec, missingLabel)}
+          onMouseEnter={(e) => handleCellHover(e, rec, missingLabel)}
+          onFocus={(e) => handleCellHover(e, rec, missingLabel)}
         />
       );
     }
 
     const hrs = parseHours(rec.hours);
     const fillPct = Math.min(100, Math.round((hrs / FULL_SHIFT_HOURS) * 100));
+    const filledLabel = `${eng} — ${hrs.toFixed(2)}h`;
 
     return (
       <div
         key={dateStr}
         className={`attn-capsule attn-capsule--filled ${weekend ? 'attn-capsule--weekend-filled' : ''}`}
-        onClick={(e) => handleCellClick(e, rec, `${eng} — ${hrs.toFixed(2)}h`)}
-        onMouseEnter={(e) => handleCellHover(e, rec, `${eng} — ${hrs.toFixed(2)}h`)}
+        tabIndex={0}
+        role="button"
+        aria-label={filledLabel}
+        onClick={(e) => handleCellActivate(e, rec, filledLabel)}
+        onMouseEnter={(e) => handleCellHover(e, rec, filledLabel)}
+        onFocus={(e) => handleCellHover(e, rec, filledLabel)}
       >
         <div className="attn-capsule__fill" style={{ height: `${fillPct}%` }} />
         {rec.earlyReason && <span className="attn-capsule__icon" />}
@@ -398,8 +422,12 @@ export default function AttendanceTab({ managers = [] }) {
       <div
         key={dateStr}
         className={cls}
-        onClick={rec ? (e) => handleCellClick(e, rec, label) : undefined}
+        tabIndex={rec ? 0 : undefined}
+        role={rec ? 'button' : undefined}
+        aria-label={rec ? label : undefined}
+        onClick={rec ? (e) => handleCellActivate(e, rec, label) : undefined}
         onMouseEnter={rec ? (e) => handleCellHover(e, rec, label) : undefined}
+        onFocus={rec ? (e) => handleCellHover(e, rec, label) : undefined}
       >
         <span className="attn-cal-cell__num">{dateObj.getDate()}</span>
         {rec && rec.earlyReason && <span className="attn-capsule__icon attn-capsule__icon--sm" />}

@@ -15,7 +15,7 @@
  *   pointOfContact: string  (optional)
  * }
  */
-import { updateRow, deleteContractorRow, getAllRows, getManagerPin } from '../../lib/db';
+import { updateRow, deleteContractorRow, getContractorRowById, getManagerPin } from '../../lib/db';
 import { ukDateTimeString } from '../../lib/ukTime';
 import { requireSession } from '../../lib/session';
 
@@ -40,6 +40,16 @@ async function handler(req, res) {
     return res.status(400).json({ success: false, message: 'rowId, managerName, and pin are required.' });
   }
 
+  // getContractorRowById() passes this straight into a Supabase .eq('id', …)
+  // filter against a bigint column — unlike the old getAllRows()+find()
+  // lookup this replaced (where a NaN from a non-numeric rowId just never
+  // matched, falling through to 404), NaN here reaches Postgres as the
+  // literal string "NaN" and throws, so it must be rejected before that.
+  const numericRowId = Number(rowId);
+  if (!Number.isFinite(numericRowId)) {
+    return res.status(400).json({ success: false, message: 'rowId must be a number.' });
+  }
+
   try {
     // ── Verify manager PIN ────────────────────────────────────────────────────
     const expectedPin = await getManagerPin(managerName);
@@ -54,15 +64,14 @@ async function handler(req, res) {
     }
 
     // ── Verify record exists ──────────────────────────────────────────────────
-    const rows   = await getAllRows();
-    const record = rows.find((r) => r._row === Number(rowId));
+    const record = await getContractorRowById(numericRowId);
     if (!record) {
       return res.status(404).json({ success: false, message: 'Record not found.' });
     }
 
     // ── Delete action ─────────────────────────────────────────────────────────
     if (action === 'delete') {
-      await deleteContractorRow(Number(rowId));
+      await deleteContractorRow(numericRowId);
       return res.status(200).json({
         success: true,
         message: `Record for ${record['Operative Name']} deleted by ${managerName}.`,
@@ -72,7 +81,17 @@ async function handler(req, res) {
     // ── Force sign-out (close active session, set sign-out time + status) ─────
     if (action === 'forceSignOut') {
       const outTime = signOutTime || ukDateTimeString();
-      await updateRow(Number(rowId), {
+      // The modal's default sign-out time is a fixed "today 18:00", which is
+      // before the sign-in time for anyone who signed in later than that —
+      // guard against silently writing a negative-duration row (same check
+      // shift-correct.js already applies to its own manager correction).
+      if (record['Sign-In Time'] && new Date(outTime) <= new Date(record['Sign-In Time'])) {
+        return res.status(400).json({
+          success: false,
+          message: 'Sign-out time must be after the sign-in time.',
+        });
+      }
+      await updateRow(numericRowId, {
         'Sign-Out Time':  outTime,
         'Status':         'Completed',
         'Work Completed': workCompleted || 'Session closed by manager override',
@@ -96,7 +115,7 @@ async function handler(req, res) {
     if (buildings      !== undefined) updates['Buildings']        = buildings;
     if (pointOfContact !== undefined) updates['Point of Contact'] = pointOfContact;
 
-    await updateRow(Number(rowId), updates);
+    await updateRow(numericRowId, updates);
 
     return res.status(200).json({
       success: true,
