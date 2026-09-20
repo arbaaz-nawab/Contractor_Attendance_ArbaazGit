@@ -1096,8 +1096,6 @@ export default function Dashboard() {
   const [amendMessage,      setAmendMessage]      = useState('');
   const [forceSignOutModal, setForceSignOutModal] = useState(null);
   const [forceSignOutMsg,   setForceSignOutMsg]   = useState('');
-  const [notifyLoading,     setNotifyLoading]     = useState(false);
-  const [notifyMsg,         setNotifyMsg]         = useState('');
 
   // Amend overtime state
   const [amendOvertimeModal,   setAmendOvertimeModal]   = useState(null);
@@ -1305,6 +1303,10 @@ export default function Dashboard() {
   const isPast6PM = Number(
     new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Europe/London' }).format(new Date())
   ) >= 18;
+
+  // Same definition the (now-dormant) overdue email used and the Contractors
+  // table already highlights per row below — reused here, not a second one.
+  const overdueContractors = (isPast6PM && data) ? data.active : [];
 
   // ── Derived: approvals (team-based — each manager sees only their own team) ──
   const isOverrideManager = currentManager === OVERRIDE_APPROVER;
@@ -1640,7 +1642,6 @@ export default function Dashboard() {
                 setAmendMessage('');
                 setAmendOvertimeMessage('');
                 setForceSignOutMsg('');
-                setNotifyMsg('');
                 setRotaMessage('');
               }}
             >
@@ -1665,30 +1666,9 @@ export default function Dashboard() {
             <button className="btn btn--secondary btn--sm" onClick={fetchData} disabled={loading}>
               {loading ? 'Refreshing...' : 'Refresh'}
             </button>
-            <button
-              className="btn btn--secondary btn--sm"
-              style={{ borderColor: '#b91c1c', color: '#b91c1c' }}
-              disabled={notifyLoading}
-              onClick={async () => {
-                setNotifyLoading(true); setNotifyMsg('');
-                try {
-                  const res  = await fetch('/api/trigger-notify', { method: 'POST' });
-                  const json = await res.json();
-                  if (json.success) {
-                    setNotifyMsg(
-                      json.overdueCount === 0
-                        ? 'No active contractors on site — no email sent.'
-                        : `Alert sent to ${json.sent} manager(s) — ${json.overdueCount} overdue contractor(s).`
-                    );
-                  } else {
-                    setNotifyMsg('error:' + (json.message || 'Failed to send notification.'));
-                  }
-                } catch { setNotifyMsg('error:Network error.'); }
-                finally { setNotifyLoading(false); }
-              }}
-            >
-              {notifyLoading ? 'Sending…' : 'Send Overdue Alert'}
-            </button>
+            <span className="text-sm text-muted" style={{ alignSelf: 'center' }}>
+              Email alerts are not set up.
+            </span>
           </div>
         )}
 
@@ -1779,9 +1759,28 @@ export default function Dashboard() {
           {error           && <div className="alert alert--error">{error}</div>}
           {amendMessage    && <div className="alert alert--success">{amendMessage}</div>}
           {forceSignOutMsg && <div className="alert alert--success">{forceSignOutMsg}</div>}
-          {notifyMsg && (
-            <div className={`alert alert--${notifyMsg.startsWith('error:') ? 'error' : 'success'}`}>
-              {notifyMsg.startsWith('error:') ? notifyMsg.slice(6) : notifyMsg}
+
+          {overdueContractors.length > 0 && (
+            <div className="overdue-banner">
+              <p className="overdue-banner__title">
+                {overdueContractors.length} contractor{overdueContractors.length !== 1 ? 's' : ''} still signed in after 18:00
+              </p>
+              <div className="overdue-banner__list">
+                {overdueContractors.map((row, i) => (
+                  <div key={i} className="overdue-banner__row">
+                    <span>
+                      <strong>{row.operativeName}</strong> · {row.companyName}
+                      {row.buildings ? ` · ${row.buildings}` : ''} · signed in {fmtTime(row.signInTime)}
+                    </span>
+                    <button
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => { setForceSignOutMsg(''); setForceSignOutModal(row); }}
+                    >
+                      Force Sign-Out
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

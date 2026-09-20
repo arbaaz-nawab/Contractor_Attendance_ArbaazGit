@@ -863,3 +863,31 @@ tbody tr:hover { background: var(--bg-subtle); }
 .pw-oncall-line input[type="date"] { flex: 1 1 130px; }
 .pw-oncall-line input[type="text"],
 .pw-oncall-line input[type="tel"] { flex: 1 1 140px; }
+
+/* ── Overdue banner (Contractors tab) — calm amber, never red ─────────────────── */
+.overdue-banner {
+  background: var(--warning-light);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.overdue-banner__title {
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: #92400e;
+  margin-bottom: 10px;
+}
+.overdue-banner__list { display: flex; flex-direction: column; gap: 8px; }
+.overdue-banner__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-btn);
+  font-size: 0.8125rem;
+}
