@@ -87,7 +87,7 @@ function buildMonthGrid(monthAnchor) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function LiveView({ records, loading, error, onCorrect }) {
+function LiveView({ records, loading, error, onCorrect, onDelete }) {
   if (loading) return <p className="text-muted text-sm">Loading…</p>;
   if (error) return <div className="alert alert--error">{error}</div>;
 
@@ -112,7 +112,10 @@ function LiveView({ records, loading, error, onCorrect }) {
               Missing sign-out — signed in {fmtTimeOfDay(r.signInTime)} on {fmtDateLabel(r.shiftDate)}
             </div>
           </div>
-          <button className="btn btn--secondary btn--sm" onClick={() => onCorrect(r)}>Correct</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn--secondary btn--sm" onClick={() => onCorrect(r)}>Correct</button>
+            <button className="btn btn--secondary btn--sm" onClick={() => onDelete(r)}>Delete</button>
+          </div>
         </div>
       ))}
       {open.map((r) => (
@@ -121,7 +124,10 @@ function LiveView({ records, loading, error, onCorrect }) {
             <div className="text-strong">{r.engineerName}</div>
             <div className="text-sm text-muted">On shift since {fmtTimeOfDay(r.signInTime)}</div>
           </div>
-          <span className="badge badge--active">Active</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className="badge badge--active">Active</span>
+            <button className="btn btn--secondary btn--sm" onClick={() => onDelete(r)}>Delete</button>
+          </div>
         </div>
       ))}
     </div>
@@ -219,6 +225,73 @@ function CorrectShiftModal({ shift, managers, onConfirm, onCancel }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+function DeleteShiftModal({ shift, managers, onConfirm, onCancel }) {
+  const [managerName, setManagerName] = useState('');
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleDelete() {
+    setError('');
+    if (!managerName || !pin.trim()) { setError('Please select your name and enter your PIN.'); return; }
+    setLoading(true);
+    try {
+      const res = await dashFetch('/api/shift-delete', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ rowId: shift._row, managerName, pin }),
+      });
+      const data = await res.json();
+      if (data.success) onConfirm(data.message);
+      else setError(data.message);
+    } catch {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }}>
+      <div className="card" style={{ maxWidth: 420, width: '90%', margin: 0 }}>
+        <p className="card__title">Delete Shift — {shift.engineerName}</p>
+        {error && <div className="alert alert--error">{error}</div>}
+
+        <div className="alert alert--error">
+          This permanently deletes this record and cannot be undone.
+        </div>
+        <p className="text-sm text-muted mb-2">
+          {fmtDateLabel(shift.shiftDate)}, signed in {fmtTimeOfDay(shift.signInTime) || '—'}
+          {shift.signOutTime ? `, out ${fmtTimeOfDay(shift.signOutTime)}` : ''}
+          {parseHours(shift.hours) > 0 ? ` (${parseHours(shift.hours).toFixed(2)}h)` : ''}.
+        </p>
+
+        <div className="form-group">
+          <label htmlFor="delManager">Manager name *</label>
+          <select id="delManager" value={managerName} onChange={(e) => setManagerName(e.target.value)}>
+            <option value="">— Select —</option>
+            {managers.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="delPin">Your PIN *</label>
+          <input id="delPin" type="password" value={pin} onChange={(e) => setPin(e.target.value)} />
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn--primary" disabled={loading} onClick={handleDelete}>
+            {loading ? 'Deleting…' : 'Delete permanently'}
+          </button>
+          <button className="btn btn--secondary" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function AttendanceTab({ managers = [] }) {
   const [view, setView] = useState('live'); // 'live' | 'week' | 'month'
 
@@ -238,6 +311,7 @@ export default function AttendanceTab({ managers = [] }) {
 
   const [correctModal, setCorrectModal] = useState(null);
   const [correctMsg, setCorrectMsg]     = useState('');
+  const [deleteModal, setDeleteModal]   = useState(null);
   const [tooltip, setTooltip]           = useState(null); // { rec, x, y, label }
 
   const fetchLive = useCallback(async () => {
@@ -313,6 +387,18 @@ export default function AttendanceTab({ managers = [] }) {
     setTooltip(null);
     setCorrectMsg('');
     setCorrectModal(rec);
+  }
+
+  function openDelete(rec) {
+    setTooltip(null);
+    setCorrectMsg('');
+    setDeleteModal(rec);
+  }
+
+  function handleDeleted(msg) {
+    setDeleteModal(null);
+    setCorrectMsg(msg);
+    refetchCurrentRange();
   }
 
   function handleCorrected(msg) {
@@ -449,6 +535,15 @@ export default function AttendanceTab({ managers = [] }) {
         />
       )}
 
+      {deleteModal && (
+        <DeleteShiftModal
+          shift={deleteModal}
+          managers={managers}
+          onConfirm={handleDeleted}
+          onCancel={() => setDeleteModal(null)}
+        />
+      )}
+
       {tooltip && (
         <div
           className="attn-tooltip"
@@ -457,11 +552,16 @@ export default function AttendanceTab({ managers = [] }) {
         >
           <div className="attn-tooltip__title">{tooltip.label}</div>
           <div style={{ whiteSpace: 'pre-line' }}>{tooltipBody(tooltip.rec)}</div>
-          {tooltip.rec.status === 'MISSING_SIGNOUT' && (
-            <button className="btn btn--secondary btn--sm mt-2" onClick={() => { setTooltip(null); openCorrect(tooltip.rec); }}>
-              Correct
+          <div style={{ display: 'flex', gap: 8 }}>
+            {tooltip.rec.status === 'MISSING_SIGNOUT' && (
+              <button className="btn btn--secondary btn--sm mt-2" onClick={() => { setTooltip(null); openCorrect(tooltip.rec); }}>
+                Correct
+              </button>
+            )}
+            <button className="btn btn--secondary btn--sm mt-2" onClick={() => { setTooltip(null); openDelete(tooltip.rec); }}>
+              Delete
             </button>
-          )}
+          </div>
         </div>
       )}
 
@@ -480,7 +580,7 @@ export default function AttendanceTab({ managers = [] }) {
       </div>
 
       {view === 'live' && (
-        <LiveView records={liveRecords} loading={liveLoading} error={liveError} onCorrect={openCorrect} />
+        <LiveView records={liveRecords} loading={liveLoading} error={liveError} onCorrect={openCorrect} onDelete={openDelete} />
       )}
 
       {view === 'week' && (

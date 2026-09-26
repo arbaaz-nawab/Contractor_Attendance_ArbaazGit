@@ -174,6 +174,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS shift_log_one_open_per_engineer_idx
 -- from the dashboard Attendance tab.
 ALTER TABLE shift_log ADD COLUMN IF NOT EXISTS correction_note TEXT;
 
+-- Audit trail for permanent deletes from the Attendance tab. The shift_log row
+-- is hard-deleted, so who/when/what is kept here (row_snapshot = full JSON of
+-- the deleted row). Append-only from the app's side.
+CREATE TABLE IF NOT EXISTS shift_log_deletions (
+  id            BIGSERIAL PRIMARY KEY,
+  shift_id      BIGINT NOT NULL,
+  engineer_name TEXT,
+  shift_date    TEXT,
+  sign_in_time  TEXT,
+  sign_out_time TEXT,
+  hours         TEXT,
+  status        TEXT,
+  deleted_by    TEXT NOT NULL,
+  deleted_at    TEXT NOT NULL,
+  row_snapshot  TEXT,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE shift_log_deletions DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_shift_log_deletions" ON shift_log_deletions;
+CREATE POLICY "allow_all_shift_log_deletions" ON shift_log_deletions FOR ALL USING (true) WITH CHECK (true);
+
 -- ── 9. Parking tab (Estates log of parking booked for external contractors) ──
 -- Standalone: deliberately no FK/link to contractor_log.
 CREATE TABLE IF NOT EXISTS parking_bookings (
