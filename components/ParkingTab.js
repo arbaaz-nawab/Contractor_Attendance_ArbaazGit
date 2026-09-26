@@ -25,7 +25,10 @@ const DURATION_OPTIONS = [
   { code: 'FULL_DAY', label: 'Full day (over 4 hrs)' },
 ];
 
-const STATUS_OPTIONS = ['Requested', 'Booked', 'Completed', 'Cancelled'];
+// Only Requested/Booked can be set. Legacy Completed/Cancelled rows keep their
+// stored value but display as a read-only "Archived" (filterable, not editable).
+const STATUS_OPTIONS = ['Requested', 'Booked'];
+const ARCHIVED_STATUSES = ['Completed', 'Cancelled'];
 
 function durationLabel(code) {
   return DURATION_OPTIONS.find((d) => d.code === code)?.label || code;
@@ -48,13 +51,12 @@ function summarizeHistory(h) {
 }
 
 function StatusBadge({ status }) {
-  const cls = {
+  const archived = ARCHIVED_STATUSES.includes(status);
+  const cls = archived ? 'badge--completed' : {
     Requested: 'badge--requested',
     Booked: 'badge--booked',
-    Completed: 'badge--completed',
-    Cancelled: 'badge--cancelled',
   }[status] || '';
-  return <span className={`badge ${cls}`}>{status}</span>;
+  return <span className={`badge ${cls}`}>{archived ? 'Archived' : status}</span>;
 }
 
 const overlayStyle = {
@@ -399,10 +401,7 @@ function BookingDetailModal({ bookingId, meta, onClose, onChanged, onManageStaff
                   <button className="btn btn--secondary btn--sm" onClick={() => confirmStatus('Booked')}>Mark Booked</button>
                 )}
                 {data.booking.status === 'Booked' && (
-                  <button className="btn btn--secondary btn--sm" onClick={() => confirmStatus('Completed')}>Mark Completed</button>
-                )}
-                {data.booking.status !== 'Cancelled' && data.booking.status !== 'Completed' && (
-                  <button className="btn btn--secondary btn--sm" onClick={() => confirmStatus('Cancelled')}>Cancel Booking</button>
+                  <button className="btn btn--secondary btn--sm" onClick={() => confirmStatus('Requested')}>Mark Requested</button>
                 )}
                 <button className="btn btn--secondary btn--sm" onClick={startEdit}>Edit</button>
               </div>
@@ -655,6 +654,7 @@ export default function ParkingTab() {
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+          <option value="Archived">Archived</option>
         </select>
         <input type="text" placeholder="Filter by company…" value={companyFilter}
           onChange={(e) => setCompanyFilter(e.target.value)} />

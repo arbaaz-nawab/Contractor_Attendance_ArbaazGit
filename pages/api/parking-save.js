@@ -10,7 +10,8 @@
  *   status: { action:'status', id, status, changedBy }
  *
  * Every create/update/status-change is logged to parking_history — no hard
- * delete anywhere; cancelling is just status:'Cancelled'. No per-manager PIN
+ * delete anywhere. Status is Requested/Booked only (legacy Completed/Cancelled
+ * rows are read-only "Archived"). No per-manager PIN
  * on these writes (session-only, per the agreed design).
  */
 import {
@@ -21,7 +22,10 @@ import { ukDateTimeString } from '../../lib/ukTime';
 import { requireSession } from '../../lib/session';
 
 const DURATION_CODES = ['1H', '2H', '3H', '4H', 'FULL_DAY'];
-const STATUSES = ['Requested', 'Booked', 'Completed', 'Cancelled'];
+// Only these two can be set. Legacy 'Completed'/'Cancelled' rows keep their stored
+// value (shown read-only as "Archived") but can no longer be assigned or changed.
+const STATUSES = ['Requested', 'Booked'];
+const ARCHIVED_STATUSES = ['Completed', 'Cancelled'];
 const CONFLICT_MESSAGE = 'Another active booking already has this vehicle registration on this date.';
 const HISTORY_LOST_MESSAGE = 'This change may have been saved without a history record. Please check this booking and contact support.';
 
@@ -176,16 +180,17 @@ async function handleStatus(req, res) {
   if (!existing) {
     return res.status(404).json({ success: false, message: 'Booking not found.' });
   }
+  if (ARCHIVED_STATUSES.includes(existing.status)) {
+    return res.status(409).json({ success: false, message: 'This is an archived booking; its status can no longer be changed.' });
+  }
   if (existing.status === status) {
     return res.status(200).json({ success: true });
   }
 
   const now = ukDateTimeString();
   // bookedAt tracks "the last time this booking was confirmed Booked":
-  // (re-)entering Booked (including reactivating from Cancelled) always
-  // refreshes it; moving back to Requested clears it, since the booking is
-  // no longer confirmed. Completed and Cancelled otherwise keep whatever
-  // bookedAt was already there, preserving "when it was booked" for history.
+  // entering Booked always refreshes it; moving back to Requested clears it,
+  // since the booking is no longer confirmed.
   const updates = { status };
   if (status === 'Booked') updates.bookedAt = now;
   else if (status === 'Requested') updates.bookedAt = '';
@@ -196,7 +201,7 @@ async function handleStatus(req, res) {
     res,
     {
       bookingId: existing.id, changedBy: changedBy.trim(), changedAt: now,
-      changeType: status === 'Cancelled' ? 'CANCELLED' : 'STATUS_CHANGE',
+      changeType: 'STATUS_CHANGE',
       changes: [{ field: 'Status', old: existing.status, new: status }],
     },
     () => updateParkingBooking(existing.id, { status: existing.status, bookedAt: existing.bookedAt }),
