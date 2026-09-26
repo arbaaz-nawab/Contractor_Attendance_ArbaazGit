@@ -103,6 +103,7 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('compliance-docs', 'compliance-docs', false)
 ON CONFLICT (id) DO NOTHING;
 
+DROP POLICY IF EXISTS "allow all compliance-docs" ON storage.objects;
 CREATE POLICY "allow all compliance-docs" ON storage.objects
   FOR ALL USING (bucket_id = 'compliance-docs');
 
@@ -142,3 +143,152 @@ DROP POLICY IF EXISTS "allow_all_weekly_rota" ON weekly_rota;
 CREATE POLICY "allow_all_weekly_rota" ON weekly_rota FOR ALL USING (true) WITH CHECK (true);
 ALTER TABLE weekly_rota ADD COLUMN IF NOT EXISTS confirmed_by TEXT;
 ALTER TABLE weekly_rota ADD COLUMN IF NOT EXISTS confirmed_at TEXT;
+
+-- ── 6c. shift_log (daily engineer shift sign-in/out, separate from overtime) ──
+CREATE TABLE IF NOT EXISTS shift_log (
+  id               BIGSERIAL PRIMARY KEY,
+  engineer_name    TEXT NOT NULL,
+  shift_date       TEXT NOT NULL,
+  sign_in_time     TEXT,
+  sign_out_time    TEXT,
+  hours            TEXT,
+  status           TEXT NOT NULL DEFAULT 'OPEN',
+  early_reason     TEXT,
+  early_note       TEXT,
+  device_id        TEXT,
+  corrected_by     TEXT,
+  corrected_at     TEXT,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE shift_log DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_shift_log" ON shift_log;
+CREATE POLICY "allow_all_shift_log" ON shift_log FOR ALL USING (true) WITH CHECK (true);
+
+-- Only one OPEN shift per engineer at a time — closes the race where two
+-- phones sign in as the same engineer within the same check-then-insert
+-- window and would otherwise both succeed.
+CREATE UNIQUE INDEX IF NOT EXISTS shift_log_one_open_per_engineer_idx
+  ON shift_log (engineer_name) WHERE status = 'OPEN';
+
+-- Manager's note when correcting a MISSING_SIGNOUT (or forgotten OPEN) shift
+-- from the dashboard Attendance tab.
+ALTER TABLE shift_log ADD COLUMN IF NOT EXISTS correction_note TEXT;
+
+-- Audit trail for permanent deletes from the Attendance tab. The shift_log row
+-- is hard-deleted, so who/when/what is kept here (row_snapshot = full JSON of
+-- the deleted row). Append-only from the app's side.
+CREATE TABLE IF NOT EXISTS shift_log_deletions (
+  id            BIGSERIAL PRIMARY KEY,
+  shift_id      BIGINT NOT NULL,
+  engineer_name TEXT,
+  shift_date    TEXT,
+  sign_in_time  TEXT,
+  sign_out_time TEXT,
+  hours         TEXT,
+  status        TEXT,
+  deleted_by    TEXT NOT NULL,
+  deleted_at    TEXT NOT NULL,
+  row_snapshot  TEXT,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE shift_log_deletions DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_shift_log_deletions" ON shift_log_deletions;
+CREATE POLICY "allow_all_shift_log_deletions" ON shift_log_deletions FOR ALL USING (true) WITH CHECK (true);
+
+-- ── 9. Parking tab (Estates log of parking booked for external contractors) ──
+-- Standalone: deliberately no FK/link to contractor_log.
+CREATE TABLE IF NOT EXISTS parking_bookings (
+  id             BIGSERIAL PRIMARY KEY,
+  requester      TEXT NOT NULL,
+  project_code   TEXT NOT NULL,
+  company        TEXT NOT NULL,
+  booking_date   TEXT NOT NULL,
+  duration_type  TEXT NOT NULL,
+  vehicle_reg    TEXT NOT NULL,
+  booked_by      TEXT NOT NULL,
+  requested_at   TEXT,
+  booked_at      TEXT,
+  status         TEXT NOT NULL DEFAULT 'Requested',
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE parking_bookings DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_parking_bookings" ON parking_bookings;
+CREATE POLICY "allow_all_parking_bookings" ON parking_bookings FOR ALL USING (true) WITH CHECK (true);
+
+-- Editable "Estates staff" list for the requester/entered-by pickers.
+-- Removing a name sets active=false (soft) — bookings store names as plain
+-- text snapshots, never a foreign key, so removing a name never touches
+-- historical rows.
+CREATE TABLE IF NOT EXISTS parking_staff (
+  id         BIGSERIAL PRIMARY KEY,
+  name       TEXT NOT NULL,
+  active     BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS parking_staff_name_idx ON parking_staff (lower(trim(name)));
+ALTER TABLE parking_staff DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_parking_staff" ON parking_staff;
+CREATE POLICY "allow_all_parking_staff" ON parking_staff FOR ALL USING (true) WITH CHECK (true);
+
+-- One row per create/edit/status-change/cancel on a booking. `changes` is a
+-- JSON-encoded array of {field, old, new} (TEXT, not JSONB — matches this
+-- schema's existing all-TEXT-payload convention rather than introducing a
+-- new column type just for this one table).
+CREATE TABLE IF NOT EXISTS parking_history (
+  id          BIGSERIAL PRIMARY KEY,
+  booking_id  BIGINT NOT NULL,
+  changed_by  TEXT NOT NULL,
+  changed_at  TEXT NOT NULL,
+  change_type TEXT NOT NULL,
+  changes     TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE parking_history DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_parking_history" ON parking_history;
+CREATE POLICY "allow_all_parking_history" ON parking_history FOR ALL USING (true) WITH CHECK (true);
+
+-- ── 11. Planned Works (Estates weekly planned-works sheet) ──────────────────
+-- Standalone: no link to parking_bookings, contractor_log, or weekly_rota.
+CREATE TABLE IF NOT EXISTS planned_works (
+  id                   BIGSERIAL PRIMARY KEY,
+  week_start           TEXT NOT NULL,
+  company_name         TEXT NOT NULL,
+  description          TEXT NOT NULL,
+  building_name        TEXT,
+  start_date           TEXT,
+  end_date             TEXT,
+  location             TEXT,
+  person_in_charge     TEXT,
+  rams_signed_off      TEXT,
+  events_team_notified TEXT,
+  parking_required     TEXT,
+  comments             TEXT,
+  added_by             TEXT NOT NULL,
+  created_at           TEXT,
+  last_edited_by       TEXT,
+  last_edited_at       TEXT,
+  review_status        TEXT NOT NULL DEFAULT '',
+  carried_from_id      BIGINT,
+  deleted_at           TEXT
+);
+ALTER TABLE planned_works DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_planned_works" ON planned_works;
+CREATE POLICY "allow_all_planned_works" ON planned_works FOR ALL USING (true) WITH CHECK (true);
+
+-- One row per on-call line (Estate Duty Manager / Call-out engineers), full
+-- replace on save per week (same pattern as weekly_rota.setRotaWeek).
+CREATE TABLE IF NOT EXISTS planned_works_oncall (
+  id          BIGSERIAL PRIMARY KEY,
+  week_start  TEXT NOT NULL,
+  group_name  TEXT NOT NULL,
+  line_order  INT NOT NULL DEFAULT 0,
+  date_from   TEXT,
+  date_to     TEXT,
+  person_name TEXT,
+  phone       TEXT,
+  updated_by  TEXT,
+  updated_at  TEXT
+);
+ALTER TABLE planned_works_oncall DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_planned_works_oncall" ON planned_works_oncall;
+CREATE POLICY "allow_all_planned_works_oncall" ON planned_works_oncall FOR ALL USING (true) WITH CHECK (true);

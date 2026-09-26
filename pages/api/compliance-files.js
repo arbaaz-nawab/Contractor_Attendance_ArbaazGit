@@ -6,6 +6,7 @@
  *   Permanently deletes a single file from Supabase Storage.
  */
 import { createClient } from '@supabase/supabase-js';
+import { requireSession } from '../../lib/session';
 
 const BUCKET = 'compliance-docs';
 
@@ -20,7 +21,7 @@ function safeFolder(name) {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim() || 'Unknown';
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const { company, file } = req.query;
 
   if (!company || !company.trim()) {
@@ -81,3 +82,5 @@ export default async function handler(req, res) {
 
   return res.status(405).json({ success: false, message: 'Method not allowed' });
 }
+
+export default requireSession(handler);

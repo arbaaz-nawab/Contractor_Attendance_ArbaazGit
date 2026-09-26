@@ -3,6 +3,10 @@ import Layout from '../components/Layout';
 import Link from 'next/link';
 import { MANAGERS, APPROVERS, ENGINEERS, WEEK_START_DAY, TEAMS, OVERRIDE_APPROVER, getLineManager, canApprove } from '../lib/config';
 import * as XLSX from 'xlsx';
+import AttendanceTab from '../components/AttendanceTab';
+import ParkingTab from '../components/ParkingTab';
+import PlannedWorksTab from '../components/PlannedWorksTab';
+import { dashFetch } from '../lib/sessionClient';
 
 // Format datetime for display: "09:30"
 function fmtTime(dt) {
@@ -125,7 +129,7 @@ function ComplianceFilesModal({ companyName, onClose }) {
   function loadFiles() {
     setLoading(true);
     setError('');
-    fetch(`/api/compliance-files?company=${encodeURIComponent(companyName)}`)
+    dashFetch(`/api/compliance-files?company=${encodeURIComponent(companyName)}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success) setFiles(data.files);
@@ -146,7 +150,7 @@ function ComplianceFilesModal({ companyName, onClose }) {
     setDeleting(filename);
     setError('');
     try {
-      const res  = await fetch(
+      const res  = await dashFetch(
         `/api/compliance-files?company=${encodeURIComponent(companyName)}&file=${encodeURIComponent(filename)}`,
         { method: 'DELETE' }
       );
@@ -172,11 +176,11 @@ function ComplianceFilesModal({ companyName, onClose }) {
       const fd = new FormData();
       fd.append('companyName', companyName);
       fd.append('document', newFile);
-      const upRes  = await fetch('/api/compliance-update', { method: 'POST', body: fd });
+      const upRes  = await dashFetch('/api/compliance-update', { method: 'POST', body: fd });
       const upData = await upRes.json();
       if (!upData.success) { setError(upData.message || 'Upload failed.'); return; }
 
-      await fetch(
+      await dashFetch(
         `/api/compliance-files?company=${encodeURIComponent(companyName)}&file=${encodeURIComponent(oldFilename)}`,
         { method: 'DELETE' }
       );
@@ -387,7 +391,7 @@ function AmendModal({ record, onConfirm, onCancel, managers = MANAGERS }) {
   async function callApi(body) {
     setLoading(true); setError('');
     try {
-      const res  = await fetch('/api/amend-contractor', {
+      const res  = await dashFetch('/api/amend-contractor', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rowId: record._row, managerName, pin, ...body }),
       });
@@ -535,7 +539,7 @@ function AmendOvertimeModal({ record, onConfirm, onCancel, managers = MANAGERS }
   async function callApi(body) {
     setLoading(true); setError('');
     try {
-      const res  = await fetch('/api/amend-overtime', {
+      const res  = await dashFetch('/api/amend-overtime', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rowId: record._row, managerName, pin, ...body }),
       });
@@ -686,7 +690,7 @@ function ForceSignOutModal({ record, onConfirm, onCancel, managers = MANAGERS })
     setLoading(true); setError('');
     try {
       const outTs = signOutTime ? signOutTime.replace('T', ' ') + ':00' : undefined;
-      const res  = await fetch('/api/amend-contractor', {
+      const res  = await dashFetch('/api/amend-contractor', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rowId:        record._row,
@@ -769,7 +773,7 @@ function RotaEditModal({ week, assignedEngineers, engineers, managers, onConfirm
     if (!pin)         { setError('Please enter your PIN.'); return; }
     setLoading(true); setError('');
     try {
-      const res  = await fetch('/api/rota', {
+      const res  = await dashFetch('/api/rota', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           weekStartDate: week.weekStartDate,
@@ -851,7 +855,7 @@ function RotaConfirmModal({ week, assignedEngineers, managers, onConfirm, onCanc
     if (!pin)         { setError('Please enter your PIN.'); return; }
     setLoading(true); setError('');
     try {
-      const res  = await fetch('/api/rota-confirm', {
+      const res  = await dashFetch('/api/rota-confirm', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ weekStartDate: week.weekStartDate, managerName, pin }),
       });
@@ -916,7 +920,7 @@ function DeleteComplianceModal({ companyName, onConfirm, onCancel, managers = MA
     if (!pin)         { setError('Please enter your PIN.'); return; }
     setLoading(true); setError('');
     try {
-      const res  = await fetch('/api/compliance-delete', {
+      const res  = await dashFetch('/api/compliance-delete', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyName, managerName, pin }),
       });
@@ -984,7 +988,7 @@ function ApprovalModal({ target, action, managerName, onConfirm, onCancel }) {
         : '';
       const body = { rowNumber: target._row, action, managerName, pin };
       if (action === 'APPROVED' && adjDuration) body.adjustedDuration = adjDuration;
-      const res  = await fetch('/api/overtime-approve', {
+      const res  = await dashFetch('/api/overtime-approve', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -1092,8 +1096,6 @@ export default function Dashboard() {
   const [amendMessage,      setAmendMessage]      = useState('');
   const [forceSignOutModal, setForceSignOutModal] = useState(null);
   const [forceSignOutMsg,   setForceSignOutMsg]   = useState('');
-  const [notifyLoading,     setNotifyLoading]     = useState(false);
-  const [notifyMsg,         setNotifyMsg]         = useState('');
 
   // Amend overtime state
   const [amendOvertimeModal,   setAmendOvertimeModal]   = useState(null);
@@ -1155,7 +1157,7 @@ export default function Dashboard() {
     try {
       const params = new URLSearchParams({ dateFrom, dateTo });
       if (company) params.append('company', company);
-      const res  = await fetch(`/api/dashboard?${params}`);
+      const res  = await dashFetch(`/api/dashboard?${params}`);
       const json = await res.json();
       if (json.success) {
         setData(json);
@@ -1170,7 +1172,7 @@ export default function Dashboard() {
   const fetchOvertimeData = useCallback(async () => {
     setOvertimeLoading(true); setOvertimeError(null);
     try {
-      const res  = await fetch('/api/overtime-list');
+      const res  = await dashFetch('/api/overtime-list');
       const json = await res.json();
       if (json.success) { setOvertimeData(json.records); }
       else { setOvertimeError('Failed to load overtime data.'); }
@@ -1185,7 +1187,7 @@ export default function Dashboard() {
       const d2 = new Date(rotaMonth + '-01'); d2.setMonth(d2.getMonth() + 1); d2.setDate(d2.getDate() + 6);
       const from = d1.toISOString().split('T')[0];
       const to   = d2.toISOString().split('T')[0];
-      const res  = await fetch(`/api/rota?from=${from}&to=${to}`);
+      const res  = await dashFetch(`/api/rota?from=${from}&to=${to}`);
       const json = await res.json();
       if (json.success) setRotaData(json.entries);
       else setRotaError('Failed to load rota data.');
@@ -1202,7 +1204,7 @@ export default function Dashboard() {
     try {
       const d1 = new Date(periodFrom); d1.setDate(d1.getDate() - 7);
       const d2 = new Date(periodTo);   d2.setDate(d2.getDate() + 7);
-      const res  = await fetch(`/api/rota?from=${d1.toISOString().split('T')[0]}&to=${d2.toISOString().split('T')[0]}`);
+      const res  = await dashFetch(`/api/rota?from=${d1.toISOString().split('T')[0]}&to=${d2.toISOString().split('T')[0]}`);
       const json = await res.json();
       if (json.success) setSummaryRotaData(json.entries || []);
       else setSummaryRotaData([]);
@@ -1224,7 +1226,7 @@ export default function Dashboard() {
   const fetchComplianceData = useCallback(async () => {
     setComplianceLoading(true); setComplianceError(null);
     try {
-      const res  = await fetch('/api/compliance-list');
+      const res  = await dashFetch('/api/compliance-list');
       const json = await res.json();
       if (json.success) { setComplianceData(json.records); }
       else { setComplianceError('Failed to load compliance data.'); }
@@ -1243,9 +1245,28 @@ export default function Dashboard() {
     setAuthChecked(true);
   }, []);
 
+  // Any dashFetch() call that gets a 401 (server session missing/expired —
+  // e.g. the 24h ceiling passed while this tab stayed open, or the cookie
+  // was cleared some other way) broadcasts this event so we fall back to
+  // the PIN gate immediately, instead of a broken UI that quietly fails.
+  useEffect(() => {
+    function onSessionExpired() { lockDashboard(); }
+    window.addEventListener('dashboard-session-expired', onSessionExpired);
+    return () => window.removeEventListener('dashboard-session-expired', onSessionExpired);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // No pagehide-based logout here (removed 2026-09-20): the `pagehide` event
+  // fires on a plain reload/navigation, not just a real tab close, so this
+  // was logging managers out on every refresh (see MEMORY.md). The session
+  // cookie has no Max-Age — it's a true browser session cookie that already
+  // ends when the browser closes — so no client-side "clear on unload" is
+  // needed; Lock (below) remains the explicit, user-initiated way to end a
+  // session early.
+
   useEffect(() => {
     if (!unlocked) return;
-    fetch('/api/managers')
+    dashFetch('/api/managers')
       .then((r) => r.json())
       .then((d) => { if (d.success && d.names.length) setManagersList(d.names); })
       .catch(() => {});
@@ -1278,6 +1299,10 @@ export default function Dashboard() {
   const isPast6PM = Number(
     new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Europe/London' }).format(new Date())
   ) >= 18;
+
+  // Same definition the (now-dormant) overdue email used and the Contractors
+  // table already highlights per row below — reused here, not a second one.
+  const overdueContractors = (isPast6PM && data) ? data.active : [];
 
   // ── Derived: approvals (team-based — each manager sees only their own team) ──
   const isOverrideManager = currentManager === OVERRIDE_APPROVER;
@@ -1325,6 +1350,10 @@ export default function Dashboard() {
 
   function lockDashboard() {
     try { sessionStorage.removeItem(DASH_UNLOCK_KEY); } catch { /* ignore */ }
+    // Fire-and-forget: clears the server-side session cookie so this browser
+    // can't reuse it after locking. The UI has already moved to the PIN gate
+    // (setUnlocked(false) below) regardless of whether this call succeeds.
+    fetch('/api/logout', { method: 'POST' }).catch(() => {});
     setUnlocked(false);
     setData(null);
     setOvertimeData(null);
@@ -1411,7 +1440,7 @@ export default function Dashboard() {
       try {
         const d1 = new Date(periodFrom); d1.setDate(d1.getDate() - 7);
         const d2 = new Date(periodTo);   d2.setDate(d2.getDate() + 7);
-        const rRes  = await fetch(`/api/rota?from=${d1.toISOString().split('T')[0]}&to=${d2.toISOString().split('T')[0]}`);
+        const rRes  = await dashFetch(`/api/rota?from=${d1.toISOString().split('T')[0]}&to=${d2.toISOString().split('T')[0]}`);
         const rJson = await rRes.json();
         if (rJson.success) {
           const byWeek = {};
@@ -1470,7 +1499,7 @@ export default function Dashboard() {
     }
 
     try {
-      const res  = await fetch('/api/compliance-update', { method: 'POST', body: fd });
+      const res  = await dashFetch('/api/compliance-update', { method: 'POST', body: fd });
       const json = await res.json();
       if (json.success) {
         setComplianceMsg('success:' + json.message);
@@ -1499,6 +1528,9 @@ export default function Dashboard() {
     { id: 'monthly',     label: 'Monthly Summary' },
     { id: 'rota',        label: 'Weekly Rota' },
     { id: 'compliance',  label: 'Contractor Compliance' },
+    { id: 'attendance',  label: 'Attendance' },
+    { id: 'parking',     label: 'Parking' },
+    { id: 'plannedworks', label: 'Planned Works' },
   ];
 
   return (
@@ -1606,7 +1638,6 @@ export default function Dashboard() {
                 setAmendMessage('');
                 setAmendOvertimeMessage('');
                 setForceSignOutMsg('');
-                setNotifyMsg('');
                 setRotaMessage('');
               }}
             >
@@ -1631,30 +1662,9 @@ export default function Dashboard() {
             <button className="btn btn--secondary btn--sm" onClick={fetchData} disabled={loading}>
               {loading ? 'Refreshing...' : 'Refresh'}
             </button>
-            <button
-              className="btn btn--secondary btn--sm"
-              style={{ borderColor: '#b91c1c', color: '#b91c1c' }}
-              disabled={notifyLoading}
-              onClick={async () => {
-                setNotifyLoading(true); setNotifyMsg('');
-                try {
-                  const res  = await fetch('/api/trigger-notify', { method: 'POST' });
-                  const json = await res.json();
-                  if (json.success) {
-                    setNotifyMsg(
-                      json.overdueCount === 0
-                        ? 'No active contractors on site — no email sent.'
-                        : `Alert sent to ${json.sent} manager(s) — ${json.overdueCount} overdue contractor(s).`
-                    );
-                  } else {
-                    setNotifyMsg('error:' + (json.message || 'Failed to send notification.'));
-                  }
-                } catch { setNotifyMsg('error:Network error.'); }
-                finally { setNotifyLoading(false); }
-              }}
-            >
-              {notifyLoading ? 'Sending…' : 'Send Overdue Alert'}
-            </button>
+            <span className="text-sm text-muted" style={{ alignSelf: 'center' }}>
+              Email alerts are not set up.
+            </span>
           </div>
         )}
 
@@ -1745,9 +1755,28 @@ export default function Dashboard() {
           {error           && <div className="alert alert--error">{error}</div>}
           {amendMessage    && <div className="alert alert--success">{amendMessage}</div>}
           {forceSignOutMsg && <div className="alert alert--success">{forceSignOutMsg}</div>}
-          {notifyMsg && (
-            <div className={`alert alert--${notifyMsg.startsWith('error:') ? 'error' : 'success'}`}>
-              {notifyMsg.startsWith('error:') ? notifyMsg.slice(6) : notifyMsg}
+
+          {overdueContractors.length > 0 && (
+            <div className="overdue-banner">
+              <p className="overdue-banner__title">
+                {overdueContractors.length} contractor{overdueContractors.length !== 1 ? 's' : ''} still signed in after 18:00
+              </p>
+              <div className="overdue-banner__list">
+                {overdueContractors.map((row, i) => (
+                  <div key={i} className="overdue-banner__row">
+                    <span>
+                      <strong>{row.operativeName}</strong> · {row.companyName}
+                      {row.buildings ? ` · ${row.buildings}` : ''} · signed in {fmtTime(row.signInTime)}
+                    </span>
+                    <button
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => { setForceSignOutMsg(''); setForceSignOutModal(row); }}
+                    >
+                      Force Sign-Out
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -2523,6 +2552,27 @@ export default function Dashboard() {
             )}
           </div>
         </>
+      )}
+
+      {dashTab === 'attendance' && (
+        <div className="card">
+          <p className="card__title">Engineer Attendance</p>
+          <AttendanceTab managers={managersList} />
+        </div>
+      )}
+
+      {dashTab === 'parking' && (
+        <div className="card">
+          <p className="card__title">Parking</p>
+          <ParkingTab />
+        </div>
+      )}
+
+      {dashTab === 'plannedworks' && (
+        <div className="card">
+          <p className="card__title">Planned Works</p>
+          <PlannedWorksTab />
+        </div>
       )}
     </Layout>
   );

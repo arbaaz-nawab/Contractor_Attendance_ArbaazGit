@@ -17,6 +17,7 @@ import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import { upsertComplianceRow, getComplianceForCompany } from '../../lib/db';
 import { ukDateTimeString } from '../../lib/ukTime';
+import { requireSession } from '../../lib/session';
 
 export const config = { api: { bodyParser: false } };
 
@@ -43,7 +44,7 @@ function safeFolder(name) {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim() || 'Unknown';
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
@@ -136,3 +137,5 @@ export default async function handler(req, res) {
     });
   }
 }
+
+export default requireSession(handler);

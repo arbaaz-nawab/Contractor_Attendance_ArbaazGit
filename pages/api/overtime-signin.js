@@ -5,7 +5,7 @@
  *
  * Starts an overtime session. Blocks if engineer already has an ACTIVE session.
  */
-import { appendOvertimeRow, findActiveOvertimeSession } from '../../lib/db';
+import { appendOvertimeRow, findActiveOvertimeSession, findActiveShift } from '../../lib/db';
 import { ukDateTimeString } from '../../lib/ukTime';
 
 export default async function handler(req, res) {
@@ -26,6 +26,14 @@ export default async function handler(req, res) {
       return res.status(409).json({
         success: false,
         message: `${engineerName} already has an active overtime session. Please sign out first.`,
+      });
+    }
+
+    const openShift = await findActiveShift(engineerName.trim());
+    if (openShift) {
+      return res.status(409).json({
+        success: false,
+        message: `${engineerName}, you have an open shift. Please sign out of your shift before starting overtime.`,
       });
     }
 

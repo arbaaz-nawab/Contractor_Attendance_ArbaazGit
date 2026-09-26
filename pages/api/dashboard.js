@@ -3,10 +3,11 @@
  *
  * Returns: { active: [...], completed: [...] }
  */
-import { getAllRows } from '../../lib/db';
+import { getRowsInDateRange } from '../../lib/db';
 import { ukDateString, calcDuration } from '../../lib/ukTime';
+import { requireSession } from '../../lib/session';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
@@ -17,15 +18,10 @@ export default async function handler(req, res) {
   const company  = req.query.company  || '';
 
   try {
-    const allRows = await getAllRows();
-
-    const rows = allRows.filter((r) => {
-      const d = r['Date'];
-      if (!d) return false;
-      if (d < dateFrom || d > dateTo) return false;
-      if (company && !r['Company Name'].toLowerCase().includes(company.toLowerCase())) return false;
-      return true;
-    });
+    // Filtered server-side (date range + company) instead of downloading the
+    // whole contractor_log table on every 60s auto-refresh — see MEMORY.md
+    // 2026-09-20 for why that mattered once the table passed 1000 rows.
+    const rows = await getRowsInDateRange(dateFrom, dateTo, company);
 
     const active = rows
       .filter((r) => r['Status'] === 'Active')
@@ -90,3 +86,5 @@ export default async function handler(req, res) {
     });
   }
 }
+
+export default requireSession(handler);

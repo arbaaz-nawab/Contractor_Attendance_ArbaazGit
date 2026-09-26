@@ -32,13 +32,15 @@ export default async function handler(req, res) {
 
   // ── Auth: Vercel cron passes Bearer token; dashboard passes custom header ────
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const authHeader = req.headers['authorization'] || '';
-    const dashHeader = req.headers['x-dashboard-auth'] || '';
-    const token = authHeader.replace('Bearer ', '').trim() || dashHeader.trim();
-    if (token !== cronSecret) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  if (!cronSecret) {
+    console.error('[notify-overdue] CRON_SECRET not set');
+    return res.status(503).json({ success: false, message: 'CRON_SECRET is not configured.' });
+  }
+  const authHeader = req.headers['authorization'] || '';
+  const dashHeader = req.headers['x-dashboard-auth'] || '';
+  const token = authHeader.replace('Bearer ', '').trim() || dashHeader.trim();
+  if (token !== cronSecret) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
 
   try {

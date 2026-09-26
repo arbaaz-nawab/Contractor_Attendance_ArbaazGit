@@ -23,8 +23,9 @@
 import { updateOvertimeRow, getAllOvertimeRows, getManagerPin } from '../../lib/db';
 import { ukDateTimeString } from '../../lib/ukTime';
 import { canApprove, getLineManager, OVERRIDE_APPROVER } from '../../lib/config';
+import { requireSession } from '../../lib/session';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
@@ -147,3 +148,5 @@ export default async function handler(req, res) {
     });
   }
 }
+
+export default requireSession(handler);

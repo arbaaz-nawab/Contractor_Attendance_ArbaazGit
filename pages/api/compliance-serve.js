@@ -5,6 +5,7 @@
  * the browser to it. PDFs and images open inline in the preview panel.
  */
 import { createClient } from '@supabase/supabase-js';
+import { requireSession } from '../../lib/session';
 
 const BUCKET = 'compliance-docs';
 
@@ -19,7 +20,7 @@ function safeFolder(name) {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim() || 'Unknown';
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).end();
 
   const { company, file } = req.query;
@@ -53,3 +54,5 @@ export default async function handler(req, res) {
     return res.status(500).end();
   }
 }
+
+export default requireSession(handler);
