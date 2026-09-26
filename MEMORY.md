@@ -1328,3 +1328,71 @@ screenshot, backup, or `.env*` file was ever staged.
 previously-touched `contractor_log` rows (132, 150, 358, 360) byte-for-byte against backup:
 identical, including the row restored after this session's own mistake. `lib/config.js`'s
 temporary ZZTEST override reverted before committing.
+
+## 2026-09-26, Six changes: Attendance delete, engineer picker, Parking statuses, Planned Works fields
+
+Branch `feature/shift-parking-planned-works`, **not committed/pushed**. Supabase host verified as
+`caiyqhnbztxbnobmdapj` before any read. Only read-only queries were run against production; no
+data was written or changed. `next build` passes.
+
+1. **Attendance permanent delete** — new `pages/api/shift-delete.js` (session + manager PIN via
+   `getManagerPin`, same pattern as `shift-correct.js`), `deleteShiftRowWithAudit()` in `lib/db.js`,
+   Delete buttons in `components/AttendanceTab.js` (Live rows + the Week/Month tap tooltip) opening
+   a `DeleteShiftModal` (warning text "permanently deletes … cannot be undone", manager + PIN).
+   Hard `DELETE` from `shift_log`. The audit row is written to a new `shift_log_deletions` table
+   FIRST; if that write fails nothing is deleted (and if the delete fails the audit row is removed
+   again). **That table does not exist yet** — `supabase-schema.sql` has the `CREATE TABLE IF NOT
+   EXISTS`, but it must be run manually in the SQL Editor (confirmed missing via a read-only probe).
+   8-hour logic, early-leave chips and missing-sign-out flagging untouched.
+2. **Engineer sign-in** — `EngineerShiftForm.js` no longer reads/writes `gc_engineer_name`; always
+   opens on the full list; "Not you?" and `notYou()` removed. Device-id logic kept. Side effect: once
+   a name is tapped there's no in-app way back to the list (reload the page).
+3. **Parking statuses** — settable statuses are `Requested`/`Booked` only (`parking-save.js` rejects
+   anything else, and rejects changing a legacy Completed/Cancelled row with 409). No CHECK
+   constraint exists on `parking_bookings.status` (plain TEXT) — confirmed in `supabase-schema.sql`,
+   no ALTER needed. UI: `StatusBadge` shows Completed/Cancelled as read-only "Archived"; no status
+   buttons on archived rows; status filter is All / Requested / Booked / Archived (`lib/db.js`
+   `getParkingBookings` maps `Archived` → `status IN (Completed, Cancelled)`). Added "Mark Requested"
+   on Booked rows so a mistaken Booked can be undone (Cancel is gone). History going forward only
+   records `STATUS_CHANGE` Requested↔Booked (the `CANCELLED` change type is no longer written).
+   **Affected existing rows: 1 of 3 `parking_bookings` — 1 Completed, 0 Cancelled** (1 Requested,
+   1 Booked unaffected). Left untouched in the data. `findParkingConflict` still ignores only
+   `Cancelled` rows (unchanged).
+4. **Planned Works company autosuggest** — the Company Name field was a plain text input (there was
+   no alphabet-filter behaviour to replace); it is now input + `<datalist>` exactly like Parking.
+   Suggestions = past `planned_works` companies + contractor_log/contractor_compliance companies
+   (`getDistinctPlannedWorksCompanies` + existing `getKnownContractorCompanies`), served by
+   `GET /api/planned-works?suggestions=1` (no new route), fetched once on tab mount.
+5. **Building Name** — fixed dropdown, four options in order, full label stored in the existing
+   `building_name` TEXT column (e.g. `London House (LH)`). No schema change.
+6. **Other fields** — Person in charge: dropdown from `PLANNED_WORKS_MANAGERS` + `PLANNED_WORKS_ADMIN`
+   (`PLANNED_WORKS_PEOPLE` in `lib/config.js`). Events Team notified: Yes / No / Not applicable.
+   RAMs: Yes / No, stored as full words. Option lists + legacy-value normalisers live in
+   `lib/config.js`; `planned-works-save.js` validates the four dropdown fields server-side (empty
+   allowed; on update an unchanged legacy value is also allowed).
+   **Y/N export mapping decision**: the agreed sheet header is "RAMs reviewed and signed off? Y/N",
+   so `planned-works-export.js` writes single letters `Y`/`N` (accepting both new `Yes`/`No` and
+   legacy `Y`/`N` stored values); header and layout unchanged. Flagged to the user as a question in
+   case they'd rather the sheet show `Yes`/`No`. Existing row (1 total): building `London House`,
+   RAMs `Y`, events `N/A`, person `Arbaaz Nawab` — stored values left as-is; the edit form maps
+   them to `London House (LH)` / `Yes` / `Not applicable` on open (persisted only if re-saved).
+
+Files: `components/{AttendanceTab,EngineerShiftForm,ParkingTab,PlannedWorksTab}.js`, `lib/{db,config}.js`,
+`pages/api/{shift-delete(new),parking-save,planned-works,planned-works-save,planned-works-export}.js`,
+`supabase-schema.sql`, `DATABASE.md`.
+
+## 2026-09-26 (later), Two follow-ups: RAMs export words, "Change name" link
+
+Branch `feature/shift-parking-planned-works`, not committed. **Supersedes** the earlier "export writes Y/N"
+decision in the entry above.
+- `pages/api/planned-works-export.js`: the RAMs column now writes `Yes`/`No` (legacy `Y`/`N` stored
+  values are mapped to the same words via `normalisePlannedWorksRams`); header changed to
+  "RAMs reviewed and signed off? Yes/No". Widths, merges, fills untouched. Verified against the real
+  export endpoint (local `next dev` with a minted session cookie, read-only): 200, valid .xlsx that
+  exceljs reloads, 1 sheet, header text updated, same 10 merges. Caveat: the only `planned_works`
+  row in production is soft-deleted, so no data row appeared in the file — the value mapping itself
+  was checked separately (`Y`→`Yes`, `n`→`No`); no production data was written to test it.
+- `components/EngineerShiftForm.js`: "Change name" link on the Shift/Overtime screen; `changeName()`
+  resets `engineerName`, `status`, `view`, `result` (no reload, nothing stored). Disabled while a
+  sign-in/out request is in flight so a late response can't land on the next engineer's screen. This
+  also resolves the "no way back after a mis-tap" side effect noted in the earlier entry.

@@ -171,3 +171,12 @@ directory):
 5. `weekly_rota` table creation, RLS disabled, permissive policy, plus `confirmed_by`/
    `confirmed_at` columns added after initial creation (visible as trailing `ADD COLUMN IF NOT
    EXISTS` lines even inside the same migration block).
+6. `shift_log_deletions` table (2026-09-26, **must be run manually in the Supabase SQL Editor**
+   — until it exists, `/api/shift-delete` refuses to delete anything). Audit trail for permanent
+   Attendance-tab deletes: `shift_id`, engineer/date/times/hours/status snapshot, `deleted_by`,
+   `deleted_at`, `row_snapshot` (full JSON of the removed `shift_log` row). No FK to `shift_log`
+   (the row it points at is gone by design).
+
+Note (2026-09-26): `parking_bookings.status` is plain `TEXT` with no CHECK constraint; the app now
+only *sets* `Requested`/`Booked`, but legacy `Completed`/`Cancelled` values remain stored and are
+shown read-only as "Archived". No schema change was needed.
