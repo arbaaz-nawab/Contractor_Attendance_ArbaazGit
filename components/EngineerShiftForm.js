@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { ENGINEERS } from '../lib/config';
 import EngineerOvertimeForm from './EngineerOvertimeForm';
 
-const NAME_KEY   = 'gc_engineer_name';
 const DEVICE_KEY = 'gc_device_id';
 
 const EARLY_REASONS = [
@@ -53,12 +52,9 @@ export default function EngineerShiftForm() {
   const [loading, setLoading] = useState(false);
   const [result, setResult]   = useState(null);
 
-  // ── Restore remembered engineer name + device id on mount ────────────────────
+  // ── Device id on mount. The engineer name is deliberately NOT remembered —
+  // the screen always opens on the full list of engineers. ─────────────────────
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(NAME_KEY);
-      if (saved) setEngineerName(saved);
-    } catch { /* localStorage blocked (private mode) — fall back to name picker */ }
     setDeviceId(getOrCreateDeviceId());
     setReady(true);
   }, []);
@@ -81,13 +77,12 @@ export default function EngineerShiftForm() {
   }, [engineerName, view, fetchStatus]);
 
   function chooseEngineer(name) {
-    try { localStorage.setItem(NAME_KEY, name); } catch { /* ignore */ }
     setResult(null);
     setEngineerName(name);
   }
 
-  function notYou() {
-    try { localStorage.removeItem(NAME_KEY); } catch { /* ignore */ }
+  // Back to the full engineer list — pure state reset, no reload and nothing remembered.
+  function changeName() {
     setEngineerName('');
     setStatus(null);
     setView('picker');
@@ -269,10 +264,11 @@ export default function EngineerShiftForm() {
         <p className="card__title">Hi, {engineerName}</p>
         <button
           type="button"
-          onClick={notYou}
+          onClick={changeName}
+          disabled={loading}
           style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}
         >
-          Not you?
+          Change name
         </button>
       </div>
 
