@@ -30,6 +30,10 @@ import {
 import { ukDateTimeString } from '../../lib/ukTime';
 import { requireSession } from '../../lib/session';
 import { isDateInWeek, addDaysStr } from '../../lib/plannedWorksWeek';
+import {
+  PLANNED_WORKS_BUILDINGS, PLANNED_WORKS_PEOPLE,
+  PLANNED_WORKS_RAMS_OPTIONS, PLANNED_WORKS_EVENTS_OPTIONS,
+} from '../../lib/config';
 
 function isValidDateStr(str) {
   if (typeof str !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
@@ -49,9 +53,32 @@ function pickFields(body) {
   return out;
 }
 
+// Dropdown-only fields: empty is allowed, otherwise the value must be one of
+// the fixed options. On update, a value identical to what the row already
+// holds is also accepted, so a legacy row (e.g. 'Y', free-text person) can
+// still be saved without being forced to change that field.
+const CHOICE_FIELDS = [
+  ['buildingName',        PLANNED_WORKS_BUILDINGS,      'Building name'],
+  ['personInCharge',      PLANNED_WORKS_PEOPLE,         'Person in charge'],
+  ['ramsSignedOff',       PLANNED_WORKS_RAMS_OPTIONS,   'RAMs signed off'],
+  ['eventsTeamNotified',  PLANNED_WORKS_EVENTS_OPTIONS, 'Events Team notified'],
+];
+
+function invalidChoice(f, existing) {
+  for (const [key, options, label] of CHOICE_FIELDS) {
+    const v = f[key];
+    if (!v || options.includes(v)) continue;
+    if (existing && existing[key] === v) continue;
+    return `${label} must be one of the listed options.`;
+  }
+  return null;
+}
+
 async function handleCreateRow(req, res) {
   const { weekStart, addedBy } = req.body;
   const f = pickFields(req.body);
+  const choiceError = invalidChoice(f, null);
+  if (choiceError) return res.status(400).json({ success: false, message: choiceError });
 
   if (!weekStart || !f.companyName || !f.description || !f.startDate || !addedBy?.trim()) {
     return res.status(400).json({ success: false, message: 'Company, description, start date and entered-by are required.' });
@@ -96,6 +123,8 @@ async function handleUpdateRow(req, res) {
   if (!existing || existing.deletedAt) {
     return res.status(404).json({ success: false, message: 'Row not found.' });
   }
+  const choiceError = invalidChoice(f, existing);
+  if (choiceError) return res.status(400).json({ success: false, message: choiceError });
 
   // Start date stays optional on update — a carried-over row has none yet —
   // but if given, it must be real and within this row's own week.

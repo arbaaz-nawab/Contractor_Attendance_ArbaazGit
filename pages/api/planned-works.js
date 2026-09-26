@@ -11,7 +11,10 @@
  * Never logs on-call phone numbers — this route only reads and returns
  * them; nothing here is written to the console.
  */
-import { getPlannedWorksForWeek, getPlannedWorksOncall } from '../../lib/db';
+import {
+  getPlannedWorksForWeek, getPlannedWorksOncall,
+  getDistinctPlannedWorksCompanies, getKnownContractorCompanies, dedupeNames,
+} from '../../lib/db';
 import { requireSession } from '../../lib/session';
 import { isoWeekInfo, weekRangeDates, addDaysStr } from '../../lib/plannedWorksWeek';
 import { PLANNED_WORKS_MANAGERS } from '../../lib/config';
@@ -19,6 +22,25 @@ import { PLANNED_WORKS_MANAGERS } from '../../lib/config';
 async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
+  }
+
+  // ?suggestions=1 — Company Name autosuggest list only (fetched once when the
+  // tab opens, not on every week change): past Planned Works companies plus
+  // known contractor/compliance companies, same sources as the Parking form.
+  if (req.query.suggestions === '1') {
+    try {
+      const [pwCompanies, contractorCompanies] = await Promise.all([
+        getDistinctPlannedWorksCompanies(),
+        getKnownContractorCompanies(),
+      ]);
+      return res.status(200).json({
+        success: true,
+        companySuggestions: dedupeNames([...pwCompanies, ...contractorCompanies]),
+      });
+    } catch (err) {
+      console.error('Planned works suggestions error:', err.message);
+      return res.status(500).json({ success: false, message: 'Server error.' });
+    }
   }
 
   const { weekStart } = req.query;

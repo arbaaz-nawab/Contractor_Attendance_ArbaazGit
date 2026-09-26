@@ -16,11 +16,12 @@ import path from 'path';
 import ExcelJS from 'exceljs';
 import { getPlannedWorksForWeek, getPlannedWorksOncall } from '../../lib/db';
 import { requireSession } from '../../lib/session';
+import { normalisePlannedWorksRams } from '../../lib/config';
 import { isoWeekInfo, weekRangeDates, formatDateRange, fmtDDMMYYYY } from '../../lib/plannedWorksWeek';
 
 const HEADERS = [
   'Company Name', 'Brief Description of work', 'Building Name', 'Date', 'Location',
-  'Name of person in charge of work', 'RAMs reviewed and signed off? Y/N',
+  'Name of person in charge of work', 'RAMs reviewed and signed off? Yes/No',
   'Events Team notified where applicable', 'Is parking required (Please add in reg no.)', 'Comments',
 ];
 const COL_WIDTHS = [2.3, 33.9, 57.7, 17.4, 30.9, 44.9, 24, 19.4, 24.7, 27.4, 43.3, 3.3];
@@ -39,6 +40,12 @@ const MIN_ONCALL_LINES = 3;
 function safeText(v) {
   const s = String(v ?? '');
   return /^[=+\-@]/.test(s) ? `'${s}` : s;
+}
+
+// The sheet shows full words ("Yes"/"No"). Legacy rows stored as 'Y'/'N' are
+// mapped to the same words so old and new rows export identically.
+function ramsForSheet(v) {
+  return normalisePlannedWorksRams(v);
 }
 
 function styleHeaderCell(cell, isYellow) {
@@ -63,7 +70,7 @@ function writeDataRow(sheet, rowNum, row) {
   const values = row ? [
     row.companyName, row.description, row.buildingName,
     formatDateRange(row.startDate, row.endDate), row.location, row.personInCharge,
-    row.ramsSignedOff, row.eventsTeamNotified, row.parkingRequired, row.comments,
+    ramsForSheet(row.ramsSignedOff), row.eventsTeamNotified, row.parkingRequired, row.comments,
   ] : new Array(10).fill('');
   values.forEach((v, i) => {
     const cell = r.getCell(i + 2);

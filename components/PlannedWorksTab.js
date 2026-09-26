@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dashFetch } from '../lib/sessionClient';
-import { PLANNED_WORKS_MANAGERS, PLANNED_WORKS_ADMIN } from '../lib/config';
+import {
+  PLANNED_WORKS_MANAGERS, PLANNED_WORKS_ADMIN, PLANNED_WORKS_BUILDINGS, PLANNED_WORKS_PEOPLE,
+  PLANNED_WORKS_RAMS_OPTIONS, PLANNED_WORKS_EVENTS_OPTIONS,
+  normalisePlannedWorksBuilding, normalisePlannedWorksRams, normalisePlannedWorksEvents,
+} from '../lib/config';
 import { defaultWeekStart, addDaysStr, formatDateRange } from '../lib/plannedWorksWeek';
 
 /**
@@ -97,8 +101,26 @@ function Tracker({ tracker }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RowModal({ mode, initial, weekStart, enteredBy, onSave, onCancel }) {
-  const [f, setF] = useState(initial || {
+// Dropdown that also shows a row's existing value when it isn't one of the
+// fixed options (legacy free-text rows), so opening + saving a row never
+// silently blanks that field.
+function ChoiceSelect({ value, options, onChange }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">— Select —</option>
+      {value && !options.includes(value) && <option value={value}>{value}</option>}
+      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+}
+
+function RowModal({ mode, initial, weekStart, enteredBy, companySuggestions, onSave, onCancel }) {
+  const [f, setF] = useState(initial ? {
+    ...initial,
+    buildingName:       normalisePlannedWorksBuilding(initial.buildingName),
+    ramsSignedOff:      normalisePlannedWorksRams(initial.ramsSignedOff),
+    eventsTeamNotified: normalisePlannedWorksEvents(initial.eventsTeamNotified),
+  } : {
     companyName: '', description: '', buildingName: '', startDate: weekStart, endDate: '',
     location: '', personInCharge: '', ramsSignedOff: '', eventsTeamNotified: '',
     parkingRequired: '', comments: '',
@@ -139,9 +161,18 @@ function RowModal({ mode, initial, weekStart, enteredBy, onSave, onCancel }) {
         <p className="text-sm text-muted mb-2">Entered by: <strong>{enteredBy}</strong></p>
         {error && <div className="alert alert--error">{error}</div>}
 
-        <div className="form-group"><label>Company Name *</label><input value={f.companyName} onChange={(e) => set('companyName', e.target.value)} /></div>
+        <div className="form-group">
+          <label htmlFor="pwCompany">Company Name *</label>
+          <input id="pwCompany" list="pwCompanyList" value={f.companyName} onChange={(e) => set('companyName', e.target.value)} />
+          <datalist id="pwCompanyList">
+            {companySuggestions.map((n) => <option key={n} value={n} />)}
+          </datalist>
+        </div>
         <div className="form-group"><label>Brief Description of Work *</label><textarea rows={2} value={f.description} onChange={(e) => set('description', e.target.value)} /></div>
-        <div className="form-group"><label>Building Name</label><input value={f.buildingName} onChange={(e) => set('buildingName', e.target.value)} /></div>
+        <div className="form-group">
+          <label>Building Name</label>
+          <ChoiceSelect value={f.buildingName} options={PLANNED_WORKS_BUILDINGS} onChange={(v) => set('buildingName', v)} />
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div className="form-group"><label>Start Date {mode === 'new' && '*'}</label><input type="date" value={f.startDate} onChange={(e) => set('startDate', e.target.value)} /></div>
@@ -149,18 +180,20 @@ function RowModal({ mode, initial, weekStart, enteredBy, onSave, onCancel }) {
         </div>
 
         <div className="form-group"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} /></div>
-        <div className="form-group"><label>Name of Person in Charge of Work</label><input value={f.personInCharge} onChange={(e) => set('personInCharge', e.target.value)} /></div>
+        <div className="form-group">
+          <label>Name of Person in Charge of Work</label>
+          <ChoiceSelect value={f.personInCharge} options={PLANNED_WORKS_PEOPLE} onChange={(v) => set('personInCharge', v)} />
+        </div>
 
         <div className="form-group">
           <label>RAMs Reviewed and Signed Off?</label>
-          <select value={f.ramsSignedOff} onChange={(e) => set('ramsSignedOff', e.target.value)}>
-            <option value="">— Select —</option>
-            <option value="Y">Y</option>
-            <option value="N">N</option>
-          </select>
+          <ChoiceSelect value={f.ramsSignedOff} options={PLANNED_WORKS_RAMS_OPTIONS} onChange={(v) => set('ramsSignedOff', v)} />
         </div>
 
-        <div className="form-group"><label>Events Team Notified Where Applicable</label><input value={f.eventsTeamNotified} onChange={(e) => set('eventsTeamNotified', e.target.value)} /></div>
+        <div className="form-group">
+          <label>Events Team Notified Where Applicable</label>
+          <ChoiceSelect value={f.eventsTeamNotified} options={PLANNED_WORKS_EVENTS_OPTIONS} onChange={(v) => set('eventsTeamNotified', v)} />
+        </div>
         <div className="form-group">
           <label>Is Parking Required <span className="text-muted text-sm">(Y/N and reg no. — free text)</span></label>
           <input value={f.parkingRequired} onChange={(e) => set('parkingRequired', e.target.value)} placeholder="e.g. Y - AB12 CDE" />
@@ -239,6 +272,17 @@ export default function PlannedWorksTab() {
   const [enteredBy, setEnteredBy] = useState(() => {
     try { return localStorage.getItem(ENTERED_BY_KEY) || ''; } catch { return ''; }
   });
+
+  const [companySuggestions, setCompanySuggestions] = useState([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res  = await dashFetch('/api/planned-works?suggestions=1');
+        const json = await res.json();
+        if (json.success) setCompanySuggestions(json.companySuggestions);
+      } catch { /* ignore — suggestions are non-critical */ }
+    })();
+  }, []);
 
   const [rowModal, setRowModal] = useState(null); // { mode: 'new'|'edit', initial? }
   const [message, setMessage]   = useState(null);
@@ -369,6 +413,7 @@ export default function PlannedWorksTab() {
           initial={rowModal.initial}
           weekStart={weekStart}
           enteredBy={enteredBy}
+          companySuggestions={companySuggestions}
           onSave={handleRowSaved}
           onCancel={() => setRowModal(null)}
         />
