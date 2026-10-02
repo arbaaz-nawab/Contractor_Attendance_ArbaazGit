@@ -5,16 +5,13 @@
  * DELETE /api/compliance-files?company=XYZ&file=filename.pdf
  *   Permanently deletes a single file from Supabase Storage.
  */
-import { createClient } from '@supabase/supabase-js';
+import { getClient } from '../../lib/db';
 import { requireSession } from '../../lib/session';
 
 const BUCKET = 'compliance-docs';
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY
-  );
+  return getClient();
 }
 
 function safeFolder(name) {

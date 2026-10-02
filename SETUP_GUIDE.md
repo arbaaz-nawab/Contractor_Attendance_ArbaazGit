@@ -64,7 +64,8 @@ seen by a Preview deployment).
 | Variable | Required? | Purpose |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | **Required** | Supabase project URL (Step 1) |
-| `SUPABASE_ANON_KEY` | **Required** | Supabase anon/public key (Step 1) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Required** | Supabase **service_role** key (Project Settings → API, "service_role secret" — not the anon/public key). Server-only, never prefix with `NEXT_PUBLIC_`. The server needs this so it keeps working once RLS is switched on with no policies — see `supabase-rls-lockdown.sql` and [MEMORY.md](MEMORY.md) 2026-09-28 |
+| `SUPABASE_ANON_KEY` | Transitional fallback only | Used only if `SUPABASE_SERVICE_ROLE_KEY` is missing, so a not-yet-set service key can't cause an outage — logs a warning when this happens. Set the service key properly instead of relying on this; it will be removed once every environment has the service key confirmed |
 | `DASHBOARD_PIN` | **Required** | The PIN that unlocks the manager dashboard |
 | `SESSION_SECRET` | **Required** | Signs the dashboard's login session cookie (see below) — the dashboard PIN screen fails closed (503) without this |
 | `CRON_SECRET` | **Required in practice** | Protects the scheduled shift-correction sweep; if unset, that endpoint is open to anyone who finds the URL |
