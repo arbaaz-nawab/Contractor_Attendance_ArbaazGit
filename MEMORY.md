@@ -1555,3 +1555,121 @@ unchanged** — this change is inert until the env var is actually set.
 4. `CONFIG_AND_ENV.md` and `.env.example` still only mention `SUPABASE_ANON_KEY` as required — a
    same-shape doc update to what `SETUP_GUIDE.md` got, not done here since it wasn't asked for.
 
+## 2026-10-01, Added Umayma Chakour to Planned Works' "who are you" list
+
+Ask: make "Umayma" selectable on the Planned Works tab without any approval/amend/delete/
+force-sign-out/alert-email power. Investigation first, as requested, before any edit.
+
+**Where every Planned Works person-name list actually comes from** (traced, not assumed):
+- `lib/config.js` `PLANNED_WORKS_MANAGERS` (was: Arbaaz Nawab, Chris Vasta, Margarita Miller,
+  Sarfraz Arfan) — despite the name, this is **not** the PIN/approval manager list; it's purely
+  "who may be stamped as the actor on a Planned Works write." Read in exactly two places:
+  `pages/api/planned-works.js:64` (builds the per-person row-added tracker chips) and
+  `components/PlannedWorksTab.js:427` (the `enteredBy` "who are you" `<select>` at the top of the
+  tab — the value sent as `addedBy`/`editedBy`/`performedBy`/`updatedBy` on every create-row,
+  update-row, delete-row, review-row, and save-oncall call). `planned-works-save.js`'s own header
+  comment confirms the design: "No per-manager PIN on any of these — session-only... any of the
+  PLANNED_WORKS_MANAGERS may add/edit/review any row." Zero PIN check, zero approval check,
+  anywhere in this path.
+- `lib/config.js` `PLANNED_WORKS_ADMIN` (`'Umayma Chakour'`, already existed) — a single name, used
+  only as a label ("Download Excel... for {ADMIN}") and folded into `PLANNED_WORKS_PEOPLE`.
+- `lib/config.js` `PLANNED_WORKS_PEOPLE` (= `PLANNED_WORKS_MANAGERS` + `PLANNED_WORKS_ADMIN`) — feeds
+  only the "Person in charge" field on a row (`RowModal`'s `ChoiceSelect`) — a data value describing
+  someone's role on that job, not an acting identity. **Umayma was already selectable here** before
+  this change — she could be named as the person in charge of someone else's logged work, but
+  could not log a row under her own name.
+
+**What adding her to each list would/wouldn't unlock** (the actual investigation asked for):
+- `PLANNED_WORKS_MANAGERS` / `PLANNED_WORKS_PEOPLE`: Planned Works bookkeeping only — no PIN, no
+  approval, no delete-contractor/force-sign-out, no email. Confirmed by checking every other
+  consumer of the name `MANAGERS` (the *real* PIN/amend-dropdown list, a separate `lib/config.js`
+  export, live-overridden from the Supabase `managers` table via `/api/managers` — used by
+  `AmendModal`/`AmendOvertimeModal`/`ForceSignOutModal`/`DeleteComplianceModal` in
+  `pages/dashboard.js`) and of `TEAMS`/`APPROVERS`/`OVERRIDE_APPROVER`/`canApprove` (the overtime
+  approval model, `pages/api/overtime-approve.js`) — neither imports or references
+  `PLANNED_WORKS_MANAGERS`/`PLANNED_WORKS_ADMIN`/`PLANNED_WORKS_PEOPLE` anywhere, and vice versa.
+  The overdue-alert email system (dormant) is keyed off the Supabase `managers` table's `email`
+  column, not `lib/config.js` at all. **Conclusion**: this is a genuinely isolated list; adding a
+  name to it cannot leak into any of the powers the task said to avoid.
+
+**Decision**: added `'Umayma Chakour'` to `PLANNED_WORKS_MANAGERS`
+([lib/config.js:93-99](lib/config.js#L93-L99)) — the minimal edit that makes her selectable as the
+acting identity (entered-by/edited-by/reviewed-by/on-call-updated-by) and gives her a tracker chip,
+on top of the "person in charge" selectability she already had. No proposal/decline needed — unlike
+a `managers`-table row (which would hand her a real PIN with amend/delete/force-sign-out/approval
+reach) or a `MANAGERS` addition (same PIN-list consequence), `PLANNED_WORKS_MANAGERS` carries no
+such reach, so the "default just add a row" shortcut the task warned against does **not** apply
+here — it was already the safe option once traced.
+
+**Name used**: `'Umayma Chakour'` — the task said to use "Umayma" exactly as given and flag that her
+full name was needed; it turned out already on file, since `PLANNED_WORKS_ADMIN` already held
+`'Umayma Chakour'` from the original Planned Works build. Used that exact existing spelling for
+consistency rather than introducing a second, possibly differently-spelled entry for the same
+person — flagging this rather than silently assuming it's correct: **please confirm `'Umayma
+Chakour'` is the correct spelling**, since it was inherited from earlier work, not re-verified with
+you now.
+
+**Side-effect fixed, not scope creep**: `PLANNED_WORKS_PEOPLE` used to be a plain array spread
+(`[...PLANNED_WORKS_MANAGERS, PLANNED_WORKS_ADMIN]`); with Umayma now in both source lists, that
+would have put her in the "Person in charge" dropdown twice (and duplicated the React `key` the
+`.map()` uses, which keys on the name itself). Deduped with `[...new Set([...])]`
+([lib/config.js:114-117](lib/config.js#L114-L117)) — the same pattern this file already uses for
+`APPROVERS`'s dedupe, so not a new convention.
+
+**Docs**: updated the one `SETUP_GUIDE.md` line that enumerated the old four-name list
+(`SETUP_GUIDE.md` "Planned Works managers" bullet) to include her and note why she's now in both
+constants. No SQL, no `managers` table change, no schema change — none needed for this.
+
+**Verified**: `npx next build` — clean.
+
+**Unfinished / flagged**: none — this was a complete, self-contained `lib/config.js` + one doc-line
+change.
+
+## 2026-10-02, Corrected the above: decoupled the "Entered by" list from the tracker list
+
+Follow-up, same day as it was noticed in the deployed app. The 2026-10-01 fix put Umayma into
+`PLANNED_WORKS_MANAGERS`, not realising that single list fed two different UI elements with
+opposite requirements — she needed to be in the dropdown but needed to be absent from the tracker.
+
+**Root cause**: `PLANNED_WORKS_MANAGERS` is read in exactly two places, and both inherited whatever
+was in the list with no way to diverge: `pages/api/planned-works.js:64` builds the per-person
+"rows added this week" tracker (`tracker[name] = 0` for each name in the list — this is the
+"3 rows" / "nothing added yet" progress-card row), and `components/PlannedWorksTab.js:427` (before
+this fix) populated the "Entered by" `<select>` from the same array. Adding Umayma satisfied the
+dropdown requirement but, as a direct side effect neither the previous session nor the task
+anticipated, also gave her a tracker chip — which is wrong, since she compiles/exports the week
+rather than contributing rows to it.
+
+**Fix**: decoupled the two uses instead of special-casing one consumer.
+- `lib/config.js`: removed `'Umayma Chakour'` back out of `PLANNED_WORKS_MANAGERS`
+  ([lib/config.js:93-98](lib/config.js#L93-L98)) — it's contributors-only again, so the tracker
+  (unchanged code, `pages/api/planned-works.js:64`) automatically stops giving her a chip.
+  `PLANNED_WORKS_PEOPLE` ([lib/config.js:114-117](lib/config.js#L114-L117), unchanged logic:
+  `[...new Set([...PLANNED_WORKS_MANAGERS, PLANNED_WORKS_ADMIN])]`) still evaluates to contributors
+  + admin, deduped — this already was, and remains, the correct "who may act" list.
+  Reworded both constants' comments to state the distinction explicitly (tracker = contributors
+  only, deliberately excludes the admin; `PLANNED_WORKS_PEOPLE` = who may act, not who's tracked) so
+  a future session doesn't re-merge them the same way.
+- `components/PlannedWorksTab.js:427`: the "Entered by" `<select>` now maps over
+  `PLANNED_WORKS_PEOPLE` instead of `PLANNED_WORKS_MANAGERS` — this is the only line that changed
+  in the component. Removed `PLANNED_WORKS_MANAGERS` from that file's import line since it's no
+  longer referenced there (confirmed via grep before removing — `PLANNED_WORKS_PEOPLE` was already
+  imported and already used for "Person in charge").
+- `SETUP_GUIDE.md`: corrected the "Planned Works managers" bullet to describe the current, correct
+  split instead of yesterday's "she's in both lists now" framing.
+
+**Confirmed nothing else needed to change** (per the task's step 3): `pages/api/planned-works-save.js`
+validates `addedBy`/`editedBy`/`performedBy`/`updatedBy` only for non-empty (`?.trim()`) — never
+against `PLANNED_WORKS_MANAGERS` or any fixed list — so a row entered by Umayma already saved,
+displayed, and attributed correctly regardless of which config list her name was in; nothing in the
+save path needed touching. `pages/api/planned-works-export.js` and `pages/api/planned-works-search.js`
+don't reference `PLANNED_WORKS_MANAGERS` at all (grepped, zero matches) — a row she adds exports and
+searches by name exactly like any other contributor's row; it just never increments a tracker count,
+which is the intended behaviour here, not a limitation.
+
+**Verified**: `npx next build` — clean, no unused-import or other errors.
+
+**Not pushed** — per instruction, commit and push is left to you.
+
+**Flag carried over from yesterday, still open**: `'Umayma Chakour'`'s spelling was inherited from
+the existing `PLANNED_WORKS_ADMIN` constant, not freshly confirmed with you — please double-check it.

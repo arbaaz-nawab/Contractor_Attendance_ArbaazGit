@@ -106,9 +106,12 @@ usable:
    dashboard **Parking** tab, click **Manage Staff** and add names directly — no SQL or redeploy
    needed, and the New Booking form shows a friendly prompt if this list is still empty.
 3. **Planned Works managers** — unlike the two lists above, `PLANNED_WORKS_MANAGERS` (currently
-   Arbaaz Nawab, Chris Vasta, Margarita Miller, Sarfraz Arfan) and `PLANNED_WORKS_ADMIN` (Umayma
-   Chakour) are **fixed in code**, in `lib/config.js` — there is no dashboard UI to edit this
-   list. Changing it requires editing that file and redeploying.
+   Arbaaz Nawab, Chris Vasta, Margarita Miller, Sarfraz Arfan — the contributors tracked by the
+   per-person progress chips) and `PLANNED_WORKS_ADMIN` (Umayma Chakour — compiles/exports the
+   week, deliberately excluded from the contributor chips, but included via `PLANNED_WORKS_PEOPLE`
+   in the "Entered by" selector and "Person in charge" field so she can still act on rows) are
+   **fixed in code**, in `lib/config.js` — there is no dashboard UI to edit this list. Changing it
+   requires editing that file and redeploying.
 4. **Engineers** — the `ENGINEERS` list (who appears in the shift/overtime name picker) and the
    `TEAMS` object (who approves whose overtime) are also fixed in `lib/config.js`.
 
