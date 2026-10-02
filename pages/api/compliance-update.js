@@ -14,8 +14,7 @@
  */
 import { IncomingForm } from 'formidable';
 import fs from 'fs';
-import { createClient } from '@supabase/supabase-js';
-import { upsertComplianceRow, getComplianceForCompany } from '../../lib/db';
+import { getClient, upsertComplianceRow, getComplianceForCompany } from '../../lib/db';
 import { ukDateTimeString } from '../../lib/ukTime';
 import { requireSession } from '../../lib/session';
 
@@ -24,10 +23,7 @@ export const config = { api: { bodyParser: false } };
 const BUCKET = 'compliance-docs';
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY
-  );
+  return getClient();
 }
 
 /** Add months to a YYYY-MM-DD string, returns YYYY-MM-DD or '' */

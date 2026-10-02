@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dashFetch } from '../lib/sessionClient';
 import {
-  PLANNED_WORKS_MANAGERS, PLANNED_WORKS_ADMIN, PLANNED_WORKS_BUILDINGS, PLANNED_WORKS_PEOPLE,
+  PLANNED_WORKS_ADMIN, PLANNED_WORKS_BUILDINGS, PLANNED_WORKS_PEOPLE,
   PLANNED_WORKS_RAMS_OPTIONS, PLANNED_WORKS_EVENTS_OPTIONS,
   normalisePlannedWorksBuilding, normalisePlannedWorksRams, normalisePlannedWorksEvents,
 } from '../lib/config';
@@ -424,7 +424,7 @@ export default function PlannedWorksTab() {
           <label htmlFor="pwEnteredBy">Entered by</label>
           <select id="pwEnteredBy" value={enteredBy} onChange={(e) => pickEnteredBy(e.target.value)}>
             <option value="">— Select —</option>
-            {PLANNED_WORKS_MANAGERS.map((n) => <option key={n} value={n}>{n}</option>)}
+            {PLANNED_WORKS_PEOPLE.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </div>
 

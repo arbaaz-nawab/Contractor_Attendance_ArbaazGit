@@ -1396,3 +1396,280 @@ decision in the entry above.
   resets `engineerName`, `status`, `view`, `result` (no reload, nothing stored). Disabled while a
   sign-in/out request is in flight so a late response can't land on the next engineer's screen. This
   also resolves the "no way back after a mis-tap" side effect noted in the earlier entry.
+
+## 2026-09-28, Production sign-in 500 — diagnosis only, no code touched
+
+Urgent report: contractor sign-in on production returns the generic "Server error. Please try
+again or contact site admin." Read-only investigation as requested — no files edited except this
+entry.
+
+**Ruled out as the cause**: `pages/api/signin.js` has not changed since the original "contractor &
+overtime amendments (Parts 1-4)" commit (`8b026cd`) — zero commits touch it in the last 14 days,
+confirmed via full `git log` on the file. `lib/db.js`'s `getClient()`, `appendRow()`,
+`findActiveSession()`, `contractorObjToRow()`, and `upsertOperativeInduction()` are byte-identical
+between `main` and this branch (`git diff main -- lib/db.js` shows only new functions added for
+shift/parking/planned-works, no edits to the contractor_log/signin code paths). Every column
+`contractorObjToRow` writes exists in `supabase-schema.sql`'s `contractor_log` table — no
+missing-column mismatch. The one non-essential side effect (`upsertOperativeInduction`, only run
+when `inductionComplete === 'Yes'`) is correctly wrapped in its own try/catch in `signin.js:104-115`
+and cannot fail the outer request — confirmed non-fatal, not the cause here, despite being a real
+known bug (see B4 below).
+
+**Ranked likely causes** (infra/config, not code, since the code hasn't moved):
+
+1. **Supabase RLS re-enabled on `contractor_log` with no fallback policy.** Schema-level asymmetry
+   found: the five original tables (`contractor_log`, `engineer_overtime`, `managers`,
+   `contractor_compliance`, `operative_induction`) only ever get
+   `ALTER TABLE ... DISABLE ROW LEVEL SECURITY` ([supabase-schema.sql:95-99](supabase-schema.sql#L95-L99))
+   with **no `CREATE POLICY` at all**. Every table added since (`weekly_rota`, `shift_log`,
+   `parking_*`, `planned_works*`) has both the disable statement *and* an explicit
+   `allow_all_<table>` policy as a backstop. If RLS on `contractor_log` ever gets flipped back on
+   by any external means (Supabase Table Editor's "Enable RLS" nudge, a project restore, a linter
+   auto-fix someone accepted) there is nothing to fall back on — every insert/select is denied by
+   default, `appendRow`/`findActiveSession` surface that as `throw new Error(error.message)`, and
+   `signin.js`'s catch returns exactly the generic message reported. **To confirm**: Supabase
+   dashboard → Table Editor → `contractor_log` → check the RLS toggle, or
+   `select relrowsecurity from pg_class where relname='contractor_log';` in the SQL Editor.
+   **Smallest fix**: run `ALTER TABLE contractor_log DISABLE ROW LEVEL SECURITY;` (or add an
+   `allow_all` policy matching the newer tables, which is more robust against this happening again).
+2. **Supabase project unreachable or credentials stale.** Production project `caiyqhnbztxbnobmdapj`
+   has seen heavy manual dashboard activity this cycle (backups, E2E test writes, running
+   `migrations/2026-09-new-features.sql`) — a paused free-tier project (inactivity auto-pause),
+   a rotated anon key, or a `NEXT_PUBLIC_SUPABASE_URL`/`SUPABASE_ANON_KEY` value that got edited
+   while `SESSION_SECRET`/`CRON_SECRET` were added to Vercel for this branch would all produce the
+   same generic 500 from `getClient()`'s error path or a thrown Supabase client error. **To
+   confirm**: check Vercel → Project Settings → Environment Variables (Production scope
+   specifically) for both vars, and check the Supabase project's dashboard home for a "paused"
+   banner. **Smallest fix**: re-set/verify the two env vars in Vercel Production and redeploy, or
+   resume the Supabase project if paused.
+3. **Check Vercel function logs first, before either fix above**: `signin.js:122` does
+   `console.error('Sign-in error:', err)` — this logs the *real*, un-truncated error server-side
+   even though the JSON response hides `detail` in production (`NODE_ENV === 'production'`). The
+   Vercel → Deployments → Functions → `/api/signin` log for the failing request will contain the
+   actual Postgres/Supabase error text (e.g. "new row violates row-level security policy" points
+   to #1; a fetch/network/auth error points to #2) and should make the other two checks
+   unnecessary — check this before making any change.
+
+**Known separate bug, confirmed not the cause today**: BACKLOG B4 —
+`upsertOperativeInduction` upserts with `onConflict: 'operative_name'`
+([lib/db.js:369-384](lib/db.js#L369-L384)) but the real unique index is functional,
+`lower(trim(operative_name))` ([supabase-schema.sql:91-92](supabase-schema.sql#L91-L92)). This
+almost certainly still fails/misbehaves silently on every induction-confirmed sign-in, but it's
+caught inside `signin.js`'s own try/catch and can never produce the 500 being reported. Worth
+fixing on its own merits, separately from this incident.
+
+## 2026-09-28 (later), Server now uses the Supabase service-role key; RLS lockdown SQL written (not run)
+
+Follow-up to the same-day diagnosis above. Goal: let RLS be switched on with zero policies later
+without repeating the outage (that happened because RLS went on with zero policies while the
+server was still using the anon key, which RLS denies by default with no policy). No app/route
+logic, schema, or existing data touched — `npx next build` clean, `node scripts/test-pagination.js`
+still passes 5/5 (see below).
+
+**Audit — every place outside `lib/db.js` that talks to Supabase** (grepped `createClient`,
+`@supabase/supabase-js`, `SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE`, `SERVICE_ROLE` across the
+whole repo):
+- `pages/api/compliance-files.js`, `pages/api/compliance-serve.js`,
+  `pages/api/compliance-update.js` — each built its own `createClient(url, anonKey)` for Supabase
+  **Storage** calls (list/remove/createSignedUrl/upload against the `compliance-docs` bucket)
+  instead of using `lib/db.js`'s client. **Fixed**: all three now `import { getClient } from
+  '../../lib/db'` and call that instead — same behaviour, now on the shared (service-role,
+  cached) client. No other logic in these three files touched.
+- `scripts/backup-tables.js` — a standalone, manually-run Node script (CommonJS `require`), reads
+  `.env.local`/shell env directly and makes its own `createClient(url, anonKey)` for a read-only
+  backup. **Not fixed** — out of scope (it's an operator tool, not server request-handling code,
+  and can't cleanly `require()` `lib/db.js`'s ES module without extra tooling). **Flagged**: once
+  `supabase-rls-lockdown.sql` is ever run, this script will need `SUPABASE_SERVICE_ROLE_KEY` in
+  its own env too, or it will start getting zero rows back (RLS denies the anon key by default).
+- `scripts/verify-date-filter-equivalence.js` — already fine: it does `await import('../lib/db.js')`
+  at runtime, so it automatically goes through the same `getClient()` and needed no change.
+- `scripts/test-pagination.js` — already fine, same reason; it only sets `SUPABASE_ANON_KEY` (no
+  service key) for its mock server, so it now exercises the new fallback path (confirmed: prints
+  the `[lib/db]` warning, still passes all 5 cases — see Testing below).
+- `lib/excel.js` — confirmed dead code with zero Supabase references, as CLAUDE.md already states;
+  not touched.
+- Confirmed **no browser code** (`components/*`, `pages/*.js` outside `pages/api/`) imports
+  `lib/db.js` or creates a Supabase client of its own — grepped for both, only `pages/api/*.js`
+  files import it. The service-role key is never at risk of reaching a client bundle.
+
+**`lib/db.js` `getClient()` changes**:
+- Now reads `SUPABASE_SERVICE_ROLE_KEY` first, falling back to `SUPABASE_ANON_KEY` (with a single
+  `console.warn`) only if the service key is unset — so a not-yet-configured service key during
+  this transition can't cause an outage on its own, the same way a missing/wrong anon key already
+  couldn't before today. Fully missing both throws immediately, unchanged in spirit from before.
+  **Remove this fallback and the `SUPABASE_ANON_KEY` var entirely** once the service key is
+  confirmed set in Vercel Production *and* Preview (and in `scripts/backup-tables.js`'s env, if
+  that script is still anon-key-only at that point) — a lingering fallback is exactly the kind of
+  thing that quietly reintroduces this outage's root cause later.
+- Now caches one client (`let cachedClient` at module scope) instead of every exported function
+  constructing a fresh one per call. Justification: `@supabase/supabase-js`'s client is a stateless
+  HTTP wrapper (no connection pool to exhaust, nothing that goes stale), env vars can't change
+  without a fresh deployment, and a single sign-in request previously created *two* separate
+  clients (`findActiveSession` + `appendRow`, sometimes a third for the induction upsert) for no
+  reason. Passed `auth: { persistSession: false, autoRefreshToken: false }` since this is a
+  server-only client with no end-user session to persist or refresh — the default behaviour tries
+  to use browser storage APIs that don't exist server-side.
+- Added `dbError(error)` — wraps a Postgrest error into a real `Error` with `.code`/`.hint`/
+  `.details` attached as extra properties (not just `.message`), applied to the three sign-in-path
+  functions (`findActiveSession`, `appendRow`, `upsertOperativeInduction`) per the task's "sign-in
+  path" scope — deliberately **not** applied to every other `throw new Error(error.message)` site
+  in `lib/db.js`, to avoid an unscoped rewrite. Node's `console.error(err)` already prints extra
+  enumerable properties on an `Error` instance, so `signin.js`'s existing, **unchanged**
+  `console.error('Sign-in error:', err)` now prints `code`/`hint`/`details` automatically — no edit
+  to `signin.js` itself was needed or made. Nothing new reaches the client response: it already
+  only ever forwarded `err.message`, and only outside production.
+
+**New file**: `supabase-rls-lockdown.sql` (not run, per instruction) — `ENABLE ROW LEVEL SECURITY`
+on the 5 legacy tables (currently zero policies either way) and the 8 newer tables (dropping their
+existing `allow_all_*` policy first, since the goal is zero policies everywhere, matching the
+legacy tables' posture rather than leaving the newer ones on a different one). Includes a
+verification block (`pg_class.relrowsecurity` should read `true` for all 13; a `pg_policies` query
+should return zero rows) and a rollback section (commented-out `DISABLE ROW LEVEL SECURITY` per
+table). Explicitly notes `storage.objects`' `compliance-docs` policy was deliberately left alone —
+not part of the requested table list, and unaffected either way once the server uses the
+service-role key (which bypasses Storage RLS too).
+
+**`SETUP_GUIDE.md`**: added `SUPABASE_SERVICE_ROLE_KEY` as Required, and changed
+`SUPABASE_ANON_KEY`'s row to describe it as the transitional fallback it now is. Did not touch
+`CONFIG_AND_ENV.md`/`.env.example` — only `SETUP_GUIDE.md` was asked for; those two are a
+worthwhile same-shape follow-up, not done here.
+
+**Testing**: `npx next build` — clean, all routes compiled. `node scripts/test-pagination.js` — 5/5
+pass, and printed exactly the expected `[lib/db] SUPABASE_SERVICE_ROLE_KEY is not set — falling
+back...` warning (the script only ever sets `SUPABASE_ANON_KEY`), confirming the fallback path
+works end-to-end against a real `getAllRows()`/`getAllOvertimeRows()`/etc. call, not just in theory.
+Could not test against a real Supabase project in this session (no live credentials available
+here) — the service-role key itself still needs to be generated in the Supabase dashboard (Project
+Settings → API → "service_role secret") and set in Vercel before any of this takes effect; until
+then `getClient()` silently keeps using the anon key via the fallback, i.e. **today's behaviour is
+unchanged** — this change is inert until the env var is actually set.
+
+**Unfinished / needs a human decision, not guessed at**:
+1. `SUPABASE_SERVICE_ROLE_KEY` has not been generated/set anywhere yet — this whole change is
+   dormant until that happens in Supabase + Vercel (Production and Preview both).
+2. `supabase-rls-lockdown.sql` must not be run until (1) is done and confirmed working end-to-end
+   (real sign-in/sign-out/dashboard smoke test) — running it first reproduces the exact 2026-09-28
+   outage on every table at once, not just `contractor_log`.
+3. `scripts/backup-tables.js` will need the service-role key in its own env once (2) happens, or it
+   will silently back up zero rows post-lockdown — flagged above, not fixed.
+4. `CONFIG_AND_ENV.md` and `.env.example` still only mention `SUPABASE_ANON_KEY` as required — a
+   same-shape doc update to what `SETUP_GUIDE.md` got, not done here since it wasn't asked for.
+
+## 2026-10-01, Added Umayma Chakour to Planned Works' "who are you" list
+
+Ask: make "Umayma" selectable on the Planned Works tab without any approval/amend/delete/
+force-sign-out/alert-email power. Investigation first, as requested, before any edit.
+
+**Where every Planned Works person-name list actually comes from** (traced, not assumed):
+- `lib/config.js` `PLANNED_WORKS_MANAGERS` (was: Arbaaz Nawab, Chris Vasta, Margarita Miller,
+  Sarfraz Arfan) — despite the name, this is **not** the PIN/approval manager list; it's purely
+  "who may be stamped as the actor on a Planned Works write." Read in exactly two places:
+  `pages/api/planned-works.js:64` (builds the per-person row-added tracker chips) and
+  `components/PlannedWorksTab.js:427` (the `enteredBy` "who are you" `<select>` at the top of the
+  tab — the value sent as `addedBy`/`editedBy`/`performedBy`/`updatedBy` on every create-row,
+  update-row, delete-row, review-row, and save-oncall call). `planned-works-save.js`'s own header
+  comment confirms the design: "No per-manager PIN on any of these — session-only... any of the
+  PLANNED_WORKS_MANAGERS may add/edit/review any row." Zero PIN check, zero approval check,
+  anywhere in this path.
+- `lib/config.js` `PLANNED_WORKS_ADMIN` (`'Umayma Chakour'`, already existed) — a single name, used
+  only as a label ("Download Excel... for {ADMIN}") and folded into `PLANNED_WORKS_PEOPLE`.
+- `lib/config.js` `PLANNED_WORKS_PEOPLE` (= `PLANNED_WORKS_MANAGERS` + `PLANNED_WORKS_ADMIN`) — feeds
+  only the "Person in charge" field on a row (`RowModal`'s `ChoiceSelect`) — a data value describing
+  someone's role on that job, not an acting identity. **Umayma was already selectable here** before
+  this change — she could be named as the person in charge of someone else's logged work, but
+  could not log a row under her own name.
+
+**What adding her to each list would/wouldn't unlock** (the actual investigation asked for):
+- `PLANNED_WORKS_MANAGERS` / `PLANNED_WORKS_PEOPLE`: Planned Works bookkeeping only — no PIN, no
+  approval, no delete-contractor/force-sign-out, no email. Confirmed by checking every other
+  consumer of the name `MANAGERS` (the *real* PIN/amend-dropdown list, a separate `lib/config.js`
+  export, live-overridden from the Supabase `managers` table via `/api/managers` — used by
+  `AmendModal`/`AmendOvertimeModal`/`ForceSignOutModal`/`DeleteComplianceModal` in
+  `pages/dashboard.js`) and of `TEAMS`/`APPROVERS`/`OVERRIDE_APPROVER`/`canApprove` (the overtime
+  approval model, `pages/api/overtime-approve.js`) — neither imports or references
+  `PLANNED_WORKS_MANAGERS`/`PLANNED_WORKS_ADMIN`/`PLANNED_WORKS_PEOPLE` anywhere, and vice versa.
+  The overdue-alert email system (dormant) is keyed off the Supabase `managers` table's `email`
+  column, not `lib/config.js` at all. **Conclusion**: this is a genuinely isolated list; adding a
+  name to it cannot leak into any of the powers the task said to avoid.
+
+**Decision**: added `'Umayma Chakour'` to `PLANNED_WORKS_MANAGERS`
+([lib/config.js:93-99](lib/config.js#L93-L99)) — the minimal edit that makes her selectable as the
+acting identity (entered-by/edited-by/reviewed-by/on-call-updated-by) and gives her a tracker chip,
+on top of the "person in charge" selectability she already had. No proposal/decline needed — unlike
+a `managers`-table row (which would hand her a real PIN with amend/delete/force-sign-out/approval
+reach) or a `MANAGERS` addition (same PIN-list consequence), `PLANNED_WORKS_MANAGERS` carries no
+such reach, so the "default just add a row" shortcut the task warned against does **not** apply
+here — it was already the safe option once traced.
+
+**Name used**: `'Umayma Chakour'` — the task said to use "Umayma" exactly as given and flag that her
+full name was needed; it turned out already on file, since `PLANNED_WORKS_ADMIN` already held
+`'Umayma Chakour'` from the original Planned Works build. Used that exact existing spelling for
+consistency rather than introducing a second, possibly differently-spelled entry for the same
+person — flagging this rather than silently assuming it's correct: **please confirm `'Umayma
+Chakour'` is the correct spelling**, since it was inherited from earlier work, not re-verified with
+you now.
+
+**Side-effect fixed, not scope creep**: `PLANNED_WORKS_PEOPLE` used to be a plain array spread
+(`[...PLANNED_WORKS_MANAGERS, PLANNED_WORKS_ADMIN]`); with Umayma now in both source lists, that
+would have put her in the "Person in charge" dropdown twice (and duplicated the React `key` the
+`.map()` uses, which keys on the name itself). Deduped with `[...new Set([...])]`
+([lib/config.js:114-117](lib/config.js#L114-L117)) — the same pattern this file already uses for
+`APPROVERS`'s dedupe, so not a new convention.
+
+**Docs**: updated the one `SETUP_GUIDE.md` line that enumerated the old four-name list
+(`SETUP_GUIDE.md` "Planned Works managers" bullet) to include her and note why she's now in both
+constants. No SQL, no `managers` table change, no schema change — none needed for this.
+
+**Verified**: `npx next build` — clean.
+
+**Unfinished / flagged**: none — this was a complete, self-contained `lib/config.js` + one doc-line
+change.
+
+## 2026-10-02, Corrected the above: decoupled the "Entered by" list from the tracker list
+
+Follow-up, same day as it was noticed in the deployed app. The 2026-10-01 fix put Umayma into
+`PLANNED_WORKS_MANAGERS`, not realising that single list fed two different UI elements with
+opposite requirements — she needed to be in the dropdown but needed to be absent from the tracker.
+
+**Root cause**: `PLANNED_WORKS_MANAGERS` is read in exactly two places, and both inherited whatever
+was in the list with no way to diverge: `pages/api/planned-works.js:64` builds the per-person
+"rows added this week" tracker (`tracker[name] = 0` for each name in the list — this is the
+"3 rows" / "nothing added yet" progress-card row), and `components/PlannedWorksTab.js:427` (before
+this fix) populated the "Entered by" `<select>` from the same array. Adding Umayma satisfied the
+dropdown requirement but, as a direct side effect neither the previous session nor the task
+anticipated, also gave her a tracker chip — which is wrong, since she compiles/exports the week
+rather than contributing rows to it.
+
+**Fix**: decoupled the two uses instead of special-casing one consumer.
+- `lib/config.js`: removed `'Umayma Chakour'` back out of `PLANNED_WORKS_MANAGERS`
+  ([lib/config.js:93-98](lib/config.js#L93-L98)) — it's contributors-only again, so the tracker
+  (unchanged code, `pages/api/planned-works.js:64`) automatically stops giving her a chip.
+  `PLANNED_WORKS_PEOPLE` ([lib/config.js:114-117](lib/config.js#L114-L117), unchanged logic:
+  `[...new Set([...PLANNED_WORKS_MANAGERS, PLANNED_WORKS_ADMIN])]`) still evaluates to contributors
+  + admin, deduped — this already was, and remains, the correct "who may act" list.
+  Reworded both constants' comments to state the distinction explicitly (tracker = contributors
+  only, deliberately excludes the admin; `PLANNED_WORKS_PEOPLE` = who may act, not who's tracked) so
+  a future session doesn't re-merge them the same way.
+- `components/PlannedWorksTab.js:427`: the "Entered by" `<select>` now maps over
+  `PLANNED_WORKS_PEOPLE` instead of `PLANNED_WORKS_MANAGERS` — this is the only line that changed
+  in the component. Removed `PLANNED_WORKS_MANAGERS` from that file's import line since it's no
+  longer referenced there (confirmed via grep before removing — `PLANNED_WORKS_PEOPLE` was already
+  imported and already used for "Person in charge").
+- `SETUP_GUIDE.md`: corrected the "Planned Works managers" bullet to describe the current, correct
+  split instead of yesterday's "she's in both lists now" framing.
+
+**Confirmed nothing else needed to change** (per the task's step 3): `pages/api/planned-works-save.js`
+validates `addedBy`/`editedBy`/`performedBy`/`updatedBy` only for non-empty (`?.trim()`) — never
+against `PLANNED_WORKS_MANAGERS` or any fixed list — so a row entered by Umayma already saved,
+displayed, and attributed correctly regardless of which config list her name was in; nothing in the
+save path needed touching. `pages/api/planned-works-export.js` and `pages/api/planned-works-search.js`
+don't reference `PLANNED_WORKS_MANAGERS` at all (grepped, zero matches) — a row she adds exports and
+searches by name exactly like any other contributor's row; it just never increments a tracker count,
+which is the intended behaviour here, not a limitation.
+
+**Verified**: `npx next build` — clean, no unused-import or other errors.
+
+**Not pushed** — per instruction, commit and push is left to you.
+
+**Flag carried over from yesterday, still open**: `'Umayma Chakour'`'s spelling was inherited from
+the existing `PLANNED_WORKS_ADMIN` constant, not freshly confirmed with you — please double-check it.

@@ -4,16 +4,13 @@
  * Generates a short-lived signed URL from Supabase Storage and redirects
  * the browser to it. PDFs and images open inline in the preview panel.
  */
-import { createClient } from '@supabase/supabase-js';
+import { getClient } from '../../lib/db';
 import { requireSession } from '../../lib/session';
 
 const BUCKET = 'compliance-docs';
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY
-  );
+  return getClient();
 }
 
 function safeFolder(name) {

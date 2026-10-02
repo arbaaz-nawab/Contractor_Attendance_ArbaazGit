@@ -64,7 +64,8 @@ seen by a Preview deployment).
 | Variable | Required? | Purpose |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | **Required** | Supabase project URL (Step 1) |
-| `SUPABASE_ANON_KEY` | **Required** | Supabase anon/public key (Step 1) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Required** | Supabase **service_role** key (Project Settings → API, "service_role secret" — not the anon/public key). Server-only, never prefix with `NEXT_PUBLIC_`. The server needs this so it keeps working once RLS is switched on with no policies — see `supabase-rls-lockdown.sql` and [MEMORY.md](MEMORY.md) 2026-09-28 |
+| `SUPABASE_ANON_KEY` | Transitional fallback only | Used only if `SUPABASE_SERVICE_ROLE_KEY` is missing, so a not-yet-set service key can't cause an outage — logs a warning when this happens. Set the service key properly instead of relying on this; it will be removed once every environment has the service key confirmed |
 | `DASHBOARD_PIN` | **Required** | The PIN that unlocks the manager dashboard |
 | `SESSION_SECRET` | **Required** | Signs the dashboard's login session cookie (see below) — the dashboard PIN screen fails closed (503) without this |
 | `CRON_SECRET` | **Required in practice** | Protects the scheduled shift-correction sweep; if unset, that endpoint is open to anyone who finds the URL |
@@ -105,9 +106,12 @@ usable:
    dashboard **Parking** tab, click **Manage Staff** and add names directly — no SQL or redeploy
    needed, and the New Booking form shows a friendly prompt if this list is still empty.
 3. **Planned Works managers** — unlike the two lists above, `PLANNED_WORKS_MANAGERS` (currently
-   Arbaaz Nawab, Chris Vasta, Margarita Miller, Sarfraz Arfan) and `PLANNED_WORKS_ADMIN` (Umayma
-   Chakour) are **fixed in code**, in `lib/config.js` — there is no dashboard UI to edit this
-   list. Changing it requires editing that file and redeploying.
+   Arbaaz Nawab, Chris Vasta, Margarita Miller, Sarfraz Arfan — the contributors tracked by the
+   per-person progress chips) and `PLANNED_WORKS_ADMIN` (Umayma Chakour — compiles/exports the
+   week, deliberately excluded from the contributor chips, but included via `PLANNED_WORKS_PEOPLE`
+   in the "Entered by" selector and "Person in charge" field so she can still act on rows) are
+   **fixed in code**, in `lib/config.js` — there is no dashboard UI to edit this list. Changing it
+   requires editing that file and redeploying.
 4. **Engineers** — the `ENGINEERS` list (who appears in the shift/overtime name picker) and the
    `TEAMS` object (who approves whose overtime) are also fixed in `lib/config.js`.
 
