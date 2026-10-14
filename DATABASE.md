@@ -180,3 +180,13 @@ directory):
 Note (2026-09-26): `parking_bookings.status` is plain `TEXT` with no CHECK constraint; the app now
 only *sets* `Requested`/`Booked`, but legacy `Completed`/`Cancelled` values remain stored and are
 shown read-only as "Archived". No schema change was needed.
+
+Note (2026-10-14): `parking_bookings.project_code` is now optional — the New/Edit Booking forms no
+longer require it (it can be filled in later, e.g. by Umayma); the column itself stays `TEXT NOT
+NULL`, an empty value is simply stored as `''`, same pattern as other optional `TEXT` columns
+elsewhere in this schema. Also added `parking_bookings.duty_manager_name` (`ADD COLUMN IF NOT
+EXISTS`, **must be run manually in the Supabase SQL Editor**) — holds the typed name when the New
+Booking "Entered by" field is set to the fixed "Duty Manager" option (`lib/config.js`
+`PARKING_DUTY_MANAGER_OPTION`) instead of a named Estates staff member; `booked_by` stays the
+literal `"Duty Manager"` string in that case. Empty otherwise. Create-only — edits and status
+changes don't offer this option.

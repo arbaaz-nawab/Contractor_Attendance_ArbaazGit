@@ -3,11 +3,21 @@
  *
  * action: 'create' | 'update' | 'status'
  *
- *   create: { action:'create', requester, projectCode, company, bookingDate,
- *             durationType, vehicleReg, enteredBy }
- *   update: { action:'update', id, requester, projectCode, company,
+ *   create: { action:'create', requester, projectCode?, company, bookingDate,
+ *             durationType, vehicleReg, enteredBy, dutyManagerName? }
+ *   update: { action:'update', id, requester, projectCode?, company,
  *             bookingDate, durationType, vehicleReg, changedBy }
  *   status: { action:'status', id, status, changedBy }
+ *
+ * projectCode is optional — it can be filled in later (e.g. by Umayma), so
+ * neither create nor update requires it.
+ *
+ * enteredBy on create is either a named Estates staff member, or the fixed
+ * PARKING_DUTY_MANAGER_OPTION ("Duty Manager") — in that case dutyManagerName
+ * is required and is stored in its own column (parking_bookings.
+ * duty_manager_name), separate from booked_by, which stays the literal
+ * "Duty Manager" label. This is create-only: edits ("changedBy") and status
+ * changes don't offer the Duty Manager option.
  *
  * Every create/update/status-change is logged to parking_history — no hard
  * delete anywhere. Status is Requested/Booked only (legacy Completed/Cancelled
@@ -20,6 +30,7 @@ import {
 } from '../../lib/db';
 import { ukDateTimeString } from '../../lib/ukTime';
 import { requireSession } from '../../lib/session';
+import { PARKING_DUTY_MANAGER_OPTION } from '../../lib/config';
 
 const DURATION_CODES = ['1H', '2H', '3H', '4H', 'FULL_DAY'];
 // Only these two can be set. Legacy 'Completed'/'Cancelled' rows keep their stored
@@ -75,11 +86,15 @@ async function writeHistoryOrRevert(res, historyEntry, revert, successBody) {
 }
 
 async function handleCreate(req, res) {
-  const { requester, projectCode, company, bookingDate, durationType, vehicleReg, enteredBy } = req.body;
+  const { requester, projectCode, company, bookingDate, durationType, vehicleReg, enteredBy, dutyManagerName } = req.body;
 
-  if (!requester?.trim() || !projectCode?.trim() || !company?.trim() || !bookingDate
+  if (!requester?.trim() || !company?.trim() || !bookingDate
     || !durationType || !vehicleReg?.trim() || !enteredBy?.trim()) {
-    return res.status(400).json({ success: false, message: 'All fields are required.' });
+    return res.status(400).json({ success: false, message: 'Please fill in all fields.' });
+  }
+  const isDutyManager = enteredBy.trim() === PARKING_DUTY_MANAGER_OPTION;
+  if (isDutyManager && !dutyManagerName?.trim()) {
+    return res.status(400).json({ success: false, message: "Please enter the Duty Manager's name." });
   }
   if (!DURATION_CODES.includes(durationType)) {
     return res.status(400).json({ success: false, message: 'Invalid duration.' });
@@ -93,12 +108,16 @@ async function handleCreate(req, res) {
 
   const booking = await createParkingBooking({
     requester: requester.trim(),
-    projectCode: projectCode.trim(),
+    projectCode: (projectCode || '').trim(),
     company: company.trim(),
     bookingDate,
     durationType,
     vehicleReg: reg,
     bookedBy: enteredBy.trim(),
+    // Only ever stored when enteredBy is literally the Duty Manager option —
+    // guards against a stray/tampered value reaching a named-staff booking
+    // regardless of what the client sent.
+    dutyManagerName: isDutyManager ? dutyManagerName.trim() : '',
     requestedAt: now,
   });
 
@@ -118,9 +137,9 @@ async function handleUpdate(req, res) {
   if (!id || !changedBy?.trim()) {
     return res.status(400).json({ success: false, message: 'id and changedBy are required.' });
   }
-  if (!requester?.trim() || !projectCode?.trim() || !company?.trim() || !bookingDate
+  if (!requester?.trim() || !company?.trim() || !bookingDate
     || !durationType || !vehicleReg?.trim()) {
-    return res.status(400).json({ success: false, message: 'All fields are required.' });
+    return res.status(400).json({ success: false, message: 'Please fill in all fields.' });
   }
   if (!DURATION_CODES.includes(durationType)) {
     return res.status(400).json({ success: false, message: 'Invalid duration.' });
@@ -136,7 +155,7 @@ async function handleUpdate(req, res) {
 
   const reg = normaliseReg(vehicleReg);
   const next = {
-    requester: requester.trim(), projectCode: projectCode.trim(), company: company.trim(),
+    requester: requester.trim(), projectCode: (projectCode || '').trim(), company: company.trim(),
     bookingDate, durationType, vehicleReg: reg,
   };
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dashFetch } from '../lib/sessionClient';
+import { PARKING_DUTY_MANAGER_OPTION } from '../lib/config';
 
 /**
  * Estates parking log — standalone, no link to contractor sign-ins.
@@ -113,7 +114,7 @@ function BookingFields({ f, setF, meta }) {
       </div>
 
       <div className="form-group">
-        <label htmlFor="pkProject">Project code *</label>
+        <label htmlFor="pkProject">Project code <span className="text-muted text-sm">(optional — can be added later)</span></label>
         <input id="pkProject" value={f.projectCode} onChange={(e) => set('projectCode', e.target.value)} />
       </div>
 
@@ -164,12 +165,16 @@ function AddBookingModal({ meta, onConfirm, onCancel, onManageStaff }) {
   const [enteredBy, setEnteredBy] = useState(() => {
     try { return localStorage.getItem(ENTERED_BY_KEY) || ''; } catch { return ''; }
   });
+  const [dutyManagerName, setDutyManagerName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const isDutyManager = enteredBy === PARKING_DUTY_MANAGER_OPTION;
+
   function valid() {
-    return !!(f.requester.trim() && f.projectCode.trim() && f.company.trim() && f.bookingDate
-      && f.durationType && f.vehicleReg.trim() && enteredBy.trim());
+    return !!(f.requester.trim() && f.company.trim() && f.bookingDate
+      && f.durationType && f.vehicleReg.trim() && enteredBy.trim()
+      && (!isDutyManager || dutyManagerName.trim()));
   }
 
   async function handleSave() {
@@ -185,6 +190,7 @@ function AddBookingModal({ meta, onConfirm, onCancel, onManageStaff }) {
           requester: f.requester.trim(), projectCode: f.projectCode.trim(), company: f.company.trim(),
           bookingDate: f.bookingDate, durationType: f.durationType, vehicleReg: f.vehicleReg.trim(),
           enteredBy: enteredBy.trim(),
+          dutyManagerName: isDutyManager ? dutyManagerName.trim() : undefined,
         }),
       });
       const data = await res.json();
@@ -217,11 +223,29 @@ function AddBookingModal({ meta, onConfirm, onCancel, onManageStaff }) {
 
             <div className="form-group">
               <label htmlFor="pkEnteredBy">Entered by *</label>
-              <select id="pkEnteredBy" value={enteredBy} onChange={(e) => setEnteredBy(e.target.value)}>
+              <select
+                id="pkEnteredBy" value={enteredBy}
+                onChange={(e) => {
+                  setEnteredBy(e.target.value);
+                  if (e.target.value !== PARKING_DUTY_MANAGER_OPTION) setDutyManagerName('');
+                }}
+              >
                 <option value="">— Select —</option>
                 {meta.staff.map((n) => <option key={n} value={n}>{n}</option>)}
+                <option value={PARKING_DUTY_MANAGER_OPTION}>{PARKING_DUTY_MANAGER_OPTION}</option>
               </select>
             </div>
+
+            {isDutyManager && (
+              <div className="form-group">
+                <label htmlFor="pkDutyManagerName">Duty Manager's name *</label>
+                <input
+                  id="pkDutyManagerName" value={dutyManagerName}
+                  onChange={(e) => setDutyManagerName(e.target.value)}
+                  placeholder="Full name"
+                />
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn--primary" disabled={loading} onClick={handleSave}>
@@ -279,7 +303,7 @@ function BookingDetailModal({ bookingId, meta, onClose, onChanged, onManageStaff
 
   async function saveEdit() {
     setActionError('');
-    if (!f.requester.trim() || !f.projectCode.trim() || !f.company.trim() || !f.bookingDate
+    if (!f.requester.trim() || !f.company.trim() || !f.bookingDate
       || !f.durationType || !f.vehicleReg.trim() || !editChangedBy.trim()) {
       setActionError('Please fill in all fields, including who is making this change.');
       return;
@@ -349,11 +373,18 @@ function BookingDetailModal({ bookingId, meta, onClose, onChanged, onManageStaff
           <>
             <StatusBadge status={data.booking.status} />
             <h3 style={{ margin: '10px 0 2px', fontSize: '1.05rem' }}>{data.booking.company}</h3>
-            <p className="text-sm text-muted" style={{ marginBottom: 12 }}>Project {data.booking.projectCode}</p>
+            <p className="text-sm text-muted" style={{ marginBottom: 12 }}>
+              {data.booking.projectCode ? `Project ${data.booking.projectCode}` : 'No project code yet'}
+            </p>
 
             <div className="parking-timeline">
               <div className="parking-timeline__item">
-                <div>Requested by <strong>{data.booking.bookedBy}</strong></div>
+                <div>
+                  Requested by <strong>{data.booking.bookedBy}</strong>
+                  {data.booking.bookedBy === PARKING_DUTY_MANAGER_OPTION && data.booking.dutyManagerName && (
+                    <> — <strong>{data.booking.dutyManagerName}</strong></>
+                  )}
+                </div>
                 <div className="parking-timeline__when">{data.booking.requestedAt}</div>
               </div>
               {data.booking.bookedAt && (
@@ -373,6 +404,7 @@ function BookingDetailModal({ bookingId, meta, onClose, onChanged, onManageStaff
             <div className="divider" />
 
             <p className="text-sm mb-2"><strong>Requester:</strong> {data.booking.requester}</p>
+            <p className="text-sm mb-2"><strong>Project code:</strong> {data.booking.projectCode || '—'}</p>
             <p className="text-sm mb-2"><strong>Booking date:</strong> {fmtDateLabel(data.booking.bookingDate)}</p>
             <p className="text-sm mb-2"><strong>Duration:</strong> {durationLabel(data.booking.durationType)}</p>
             <p className="text-sm mb-2"><strong>Vehicle reg:</strong> {data.booking.vehicleReg}</p>
@@ -679,7 +711,10 @@ export default function ParkingTab() {
         <div key={r.id} className="parking-row" onClick={() => setDetailId(r.id)}>
           <div className="parking-row__date">{fmtDateLabel(r.bookingDate)}</div>
           <div className="parking-row__main">
-            <div className="parking-row__company">{r.company} <span className="text-muted text-sm">— {r.projectCode}</span></div>
+            <div className="parking-row__company">
+              {r.company}
+              {r.projectCode && <span className="text-muted text-sm"> — {r.projectCode}</span>}
+            </div>
             <div className="parking-row__sub">{r.requester} · {r.vehicleReg} · {durationLabel(r.durationType)}</div>
           </div>
           <StatusBadge status={r.status} />

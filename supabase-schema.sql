@@ -215,6 +215,12 @@ ALTER TABLE parking_bookings DISABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_all_parking_bookings" ON parking_bookings;
 CREATE POLICY "allow_all_parking_bookings" ON parking_bookings FOR ALL USING (true) WITH CHECK (true);
 
+-- Holds the typed name when "Entered by" is set to the fixed "Duty Manager"
+-- option (lib/config.js PARKING_DUTY_MANAGER_OPTION) instead of a named
+-- Estates staff member — booked_by stays the literal "Duty Manager" in that
+-- case, this column carries who it actually was. Empty/NULL otherwise.
+ALTER TABLE parking_bookings ADD COLUMN IF NOT EXISTS duty_manager_name TEXT;
+
 -- Editable "Estates staff" list for the requester/entered-by pickers.
 -- Removing a name sets active=false (soft) — bookings store names as plain
 -- text snapshots, never a foreign key, so removing a name never touches

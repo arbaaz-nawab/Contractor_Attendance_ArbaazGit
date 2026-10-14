@@ -1673,3 +1673,50 @@ which is the intended behaviour here, not a limitation.
 
 **Flag carried over from yesterday, still open**: `'Umayma Chakour'`'s spelling was inherited from
 the existing `PLANNED_WORKS_ADMIN` constant, not freshly confirmed with you — please double-check it.
+
+## 2026-10-14, Parking: optional Project code + "Duty Manager" entered-by option
+
+Not committed/pushed. Two changes to the Parking tab's New/Edit Booking form, on `main`.
+
+1. **Project code is now optional** — removed the requirement from both the New Booking form
+   (`AddBookingModal.valid()`) and the Edit form (`BookingDetailModal.saveEdit()`), and from both
+   server-side checks in `pages/api/parking-save.js` (`handleCreate`/`handleUpdate`). The column
+   stays `TEXT NOT NULL` — a blank value is stored as `''`, same pattern as other optional `TEXT`
+   columns in this schema, so no migration is needed for this half. Fixed three places that would
+   otherwise have displayed a dangling "— " or "Project " with nothing after it when blank:
+   the Booking Detail header line (now "No project code yet"), the compact list row (project code
+   segment only renders when non-empty), and added a "Project code: —" line to the Booking Detail's
+   field list (there wasn't one there before, only in the header).
+2. **"Duty Manager" entered-by option (create only)** — the New Booking "Entered by" dropdown now
+   has a fixed extra option, `PARKING_DUTY_MANAGER_OPTION = 'Duty Manager'` (`lib/config.js`), in
+   addition to the named staff from `parking_staff`. Selecting it reveals a required "Duty
+   Manager's name" text box; that typed name is stored in a new column,
+   `parking_bookings.duty_manager_name`, kept separate from `booked_by` (which stays the literal
+   `"Duty Manager"` string) so the staff list / any future per-staff-member reporting is never
+   polluted by a one-off name. The Booking Detail timeline's "Requested by" line shows both —
+   `Requested by Duty Manager — <name>` — when applicable. Validated server-side in
+   `pages/api/parking-save.js` `handleCreate` regardless of what the client sends (`dutyManagerName`
+   is only ever persisted when `enteredBy.trim() === PARKING_DUTY_MANAGER_OPTION`).
+   **Deliberately scoped to the "Entered by" field on create only** — the Edit form's "Changed by"
+   dropdown and the status-change actor picker (both also sourced from `parking_staff`) were left
+   untouched, since the request specifically said "entered by"; flagged to the user as a choice they
+   can ask to extend.
+
+**Schema**: `supabase-schema.sql` — `ALTER TABLE parking_bookings ADD COLUMN IF NOT EXISTS
+duty_manager_name TEXT;` added right after the `parking_bookings` block, same pattern as the
+existing `ADD COLUMN IF NOT EXISTS` lines for `contractor_log`/`engineer_overtime`/`managers`/
+`weekly_rota`/`shift_log`. **Must be run manually in the Supabase SQL Editor before this ships** —
+until then, `duty_manager_name` simply won't exist as a column and any create with `enteredBy:
+'Duty Manager'` will throw at the `createParkingBooking` insert (500, not silently dropped).
+`DATABASE.md` updated with both changes.
+
+Files: `lib/config.js` (new `PARKING_DUTY_MANAGER_OPTION` export), `lib/db.js`
+(`parkingBookingToObj` mapper + `createParkingBooking`), `pages/api/parking-save.js`
+(`handleCreate`/`handleUpdate`), `components/ParkingTab.js` (`BookingFields`, `AddBookingModal`,
+`BookingDetailModal`'s view-mode and `saveEdit`), `supabase-schema.sql`, `DATABASE.md`.
+
+**Verified**: `npx next build` — clean, exit code 0. **Not tested against the live site or a real
+Supabase write in this session** — no dashboard PIN/manager PIN available this session, so this is
+code-review-level confidence only; the "Duty Manager" create path and the optional-project-code
+save path should both be exercised once the schema change is applied, before relying on this in
+production.
