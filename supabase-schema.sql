@@ -221,6 +221,12 @@ CREATE POLICY "allow_all_parking_bookings" ON parking_bookings FOR ALL USING (tr
 -- case, this column carries who it actually was. Empty/NULL otherwise.
 ALTER TABLE parking_bookings ADD COLUMN IF NOT EXISTS duty_manager_name TEXT;
 
+-- One of PARKING_LOCATION_OPTIONS (lib/config.js) — "Camden Council" (on
+-- street) or "Coram's Fields". Required by the app on new bookings, but the
+-- column itself allows '' (DEFAULT) so existing rows aren't broken by this
+-- ALTER, and an older booking can stay "not set" until someone edits it in.
+ALTER TABLE parking_bookings ADD COLUMN IF NOT EXISTS parking_location TEXT NOT NULL DEFAULT '';
+
 -- Editable "Estates staff" list for the requester/entered-by pickers.
 -- Removing a name sets active=false (soft) — bookings store names as plain
 -- text snapshots, never a foreign key, so removing a name never touches

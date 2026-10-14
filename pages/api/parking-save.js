@@ -4,13 +4,19 @@
  * action: 'create' | 'update' | 'status'
  *
  *   create: { action:'create', requester, projectCode?, company, bookingDate,
- *             durationType, vehicleReg, enteredBy, dutyManagerName? }
+ *             durationType, vehicleReg, enteredBy, dutyManagerName?, parkingLocation }
  *   update: { action:'update', id, requester, projectCode?, company,
- *             bookingDate, durationType, vehicleReg, changedBy }
+ *             bookingDate, durationType, vehicleReg, changedBy, parkingLocation? }
  *   status: { action:'status', id, status, changedBy }
  *
  * projectCode is optional — it can be filled in later (e.g. by Umayma), so
  * neither create nor update requires it.
+ *
+ * parkingLocation is one of PARKING_LOCATION_OPTIONS ("Camden Council" =
+ * on-street, or "Coram's Fields") — required on create so every new booking
+ * is filterable by it, but update accepts it blank (an older booking that
+ * predates this field isn't forced to set it retroactively) or unchanged
+ * from its current value even if that value isn't one of the two options.
  *
  * enteredBy on create is either a named Estates staff member, or the fixed
  * PARKING_DUTY_MANAGER_OPTION ("Duty Manager") — in that case dutyManagerName
@@ -30,7 +36,7 @@ import {
 } from '../../lib/db';
 import { ukDateTimeString } from '../../lib/ukTime';
 import { requireSession } from '../../lib/session';
-import { PARKING_DUTY_MANAGER_OPTION } from '../../lib/config';
+import { PARKING_DUTY_MANAGER_OPTION, PARKING_LOCATION_OPTIONS } from '../../lib/config';
 
 const DURATION_CODES = ['1H', '2H', '3H', '4H', 'FULL_DAY'];
 // Only these two can be set. Legacy 'Completed'/'Cancelled' rows keep their stored
@@ -43,6 +49,7 @@ const HISTORY_LOST_MESSAGE = 'This change may have been saved without a history 
 const FIELD_LABELS = {
   requester: 'Requester', projectCode: 'Project Code', company: 'Company',
   bookingDate: 'Booking Date', durationType: 'Duration', vehicleReg: 'Vehicle Reg',
+  parkingLocation: 'Parking Location',
 };
 
 function normaliseReg(v) {
@@ -86,7 +93,10 @@ async function writeHistoryOrRevert(res, historyEntry, revert, successBody) {
 }
 
 async function handleCreate(req, res) {
-  const { requester, projectCode, company, bookingDate, durationType, vehicleReg, enteredBy, dutyManagerName } = req.body;
+  const {
+    requester, projectCode, company, bookingDate, durationType, vehicleReg, enteredBy,
+    dutyManagerName, parkingLocation,
+  } = req.body;
 
   if (!requester?.trim() || !company?.trim() || !bookingDate
     || !durationType || !vehicleReg?.trim() || !enteredBy?.trim()) {
@@ -95,6 +105,9 @@ async function handleCreate(req, res) {
   const isDutyManager = enteredBy.trim() === PARKING_DUTY_MANAGER_OPTION;
   if (isDutyManager && !dutyManagerName?.trim()) {
     return res.status(400).json({ success: false, message: "Please enter the Duty Manager's name." });
+  }
+  if (!PARKING_LOCATION_OPTIONS.includes(parkingLocation)) {
+    return res.status(400).json({ success: false, message: 'Please choose a parking location.' });
   }
   if (!DURATION_CODES.includes(durationType)) {
     return res.status(400).json({ success: false, message: 'Invalid duration.' });
@@ -118,6 +131,7 @@ async function handleCreate(req, res) {
     // guards against a stray/tampered value reaching a named-staff booking
     // regardless of what the client sent.
     dutyManagerName: isDutyManager ? dutyManagerName.trim() : '',
+    parkingLocation,
     requestedAt: now,
   });
 
@@ -132,7 +146,10 @@ async function handleCreate(req, res) {
 }
 
 async function handleUpdate(req, res) {
-  const { id, requester, projectCode, company, bookingDate, durationType, vehicleReg, changedBy } = req.body;
+  const {
+    id, requester, projectCode, company, bookingDate, durationType, vehicleReg, changedBy,
+    parkingLocation,
+  } = req.body;
 
   if (!id || !changedBy?.trim()) {
     return res.status(400).json({ success: false, message: 'id and changedBy are required.' });
@@ -153,10 +170,19 @@ async function handleUpdate(req, res) {
     return res.status(404).json({ success: false, message: 'Booking not found.' });
   }
 
+  // parkingLocation is not forced here — blank (not set yet) or the row's
+  // own current value (even one that predates PARKING_LOCATION_OPTIONS) are
+  // both accepted; only a NEW value has to be one of the two real options.
+  const nextParkingLocation = (parkingLocation || '').trim();
+  if (nextParkingLocation && nextParkingLocation !== existing.parkingLocation
+    && !PARKING_LOCATION_OPTIONS.includes(nextParkingLocation)) {
+    return res.status(400).json({ success: false, message: 'Parking location must be one of the listed options.' });
+  }
+
   const reg = normaliseReg(vehicleReg);
   const next = {
     requester: requester.trim(), projectCode: (projectCode || '').trim(), company: company.trim(),
-    bookingDate, durationType, vehicleReg: reg,
+    bookingDate, durationType, vehicleReg: reg, parkingLocation: nextParkingLocation,
   };
 
   const changes = [];
@@ -180,6 +206,7 @@ async function handleUpdate(req, res) {
     () => updateParkingBooking(existing.id, {
       requester: existing.requester, projectCode: existing.projectCode, company: existing.company,
       bookingDate: existing.bookingDate, durationType: existing.durationType, vehicleReg: existing.vehicleReg,
+      parkingLocation: existing.parkingLocation,
     }),
     { success: true, warning: conflict ? CONFLICT_MESSAGE : null },
   );

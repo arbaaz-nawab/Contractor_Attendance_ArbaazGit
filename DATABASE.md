@@ -190,3 +190,12 @@ Booking "Entered by" field is set to the fixed "Duty Manager" option (`lib/confi
 `PARKING_DUTY_MANAGER_OPTION`) instead of a named Estates staff member; `booked_by` stays the
 literal `"Duty Manager"` string in that case. Empty otherwise. Create-only — edits and status
 changes don't offer this option.
+
+Note (2026-10-14, later): added `parking_bookings.parking_location` (`ADD COLUMN IF NOT EXISTS
+... TEXT NOT NULL DEFAULT ''`, **must be run manually in the Supabase SQL Editor**) — one of
+`PARKING_LOCATION_OPTIONS` (`lib/config.js`): `"Camden Council"` (on-street) or `"Coram's Fields"`.
+Required by the app on every *new* booking (both New Booking form and `handleCreate` in
+`pages/api/parking-save.js`); editing an older booking that predates this field does not force a
+value onto it — blank ("not set") or the row's existing value are both accepted on update, only a
+*new* value has to be one of the two options. Filterable in the shared Parking filter row
+(`location` query param on `/api/parking-list`, value `NOT_SET` selects rows still blank).

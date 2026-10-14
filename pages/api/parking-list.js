@@ -1,7 +1,9 @@
 /**
- * GET /api/parking-list?dateFrom&dateTo&status&company&search
+ * GET /api/parking-list?dateFrom&dateTo&status&company&search&location
  *   Returns the filtered parking bookings list for the dashboard's Parking
  *   tab (Today & upcoming / History views, plus filters and search).
+ *   `location` is one of PARKING_LOCATION_OPTIONS (lib/config.js), or the
+ *   sentinel 'NOT_SET' for bookings saved before this field existed.
  *
  * GET /api/parking-list?id=123
  *   Returns one booking plus its full change history, for the booking
@@ -15,7 +17,7 @@ async function handler(req, res) {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
-  const { id, dateFrom, dateTo, status, company, search } = req.query;
+  const { id, dateFrom, dateTo, status, company, search, location } = req.query;
 
   try {
     if (id) {
@@ -27,7 +29,7 @@ async function handler(req, res) {
       return res.status(200).json({ success: true, booking, history });
     }
 
-    const records = await getParkingBookings({ dateFrom, dateTo, status, company, search });
+    const records = await getParkingBookings({ dateFrom, dateTo, status, company, search, location });
     return res.status(200).json({ success: true, records });
   } catch (err) {
     console.error('Parking list error:', err);

@@ -1720,3 +1720,69 @@ Supabase write in this session** — no dashboard PIN/manager PIN available this
 code-review-level confidence only; the "Duty Manager" create path and the optional-project-code
 save path should both be exercised once the schema change is applied, before relying on this in
 production.
+
+**Committed and pushed to `main`** (branched off first since `main` was checked out, then
+fast-forwarded — no merge commit): `180efdf`.
+
+## 2026-10-14 (later), Parking: "Parking location" (Camden Council / Coram's Fields) + filter
+
+Same day, follow-up request. Committed and pushed to `main` directly off a feature branch — see
+below.
+
+**What**: a new required-on-create field on every Parking booking, one of two fixed values —
+`PARKING_LOCATION_OPTIONS = ['Camden Council', "Coram's Fields"]` (`lib/config.js`) — plus a filter
+for it in the shared Parking filter row (works across both Today & Upcoming and History, since
+they share one filter row). Confirmed scope with the user first via AskUserQuestion: single
+mutually-exclusive choice (not two independent yes/no toggles), required on create, optional/kept-
+as-is on edit (an older booking isn't forced to set it retroactively), filter lives in the shared
+row rather than History-only.
+
+**Schema**: `supabase-schema.sql` — `ALTER TABLE parking_bookings ADD COLUMN IF NOT EXISTS
+parking_location TEXT NOT NULL DEFAULT '';`, right after the `duty_manager_name` column added
+earlier today. **Must be run manually in the Supabase SQL Editor before this ships** — until then,
+any create with a `parkingLocation` reaches `createParkingBooking`'s insert fine (the column simply
+won't exist yet, so Supabase will reject the whole insert with an unknown-column error, surfaced as
+a 500, not silently dropped).
+
+**Validation split between create and update** (mirrors the `CHOICE_FIELDS`/`invalidChoice` pattern
+already used in `pages/api/planned-works-save.js` for exactly this "required going forward, don't
+break legacy rows" shape):
+- `handleCreate`: `PARKING_LOCATION_OPTIONS.includes(parkingLocation)` — rejects blank and anything
+  not one of the two exact strings.
+- `handleUpdate`: a blank value, or the row's own current value (even if it predates this field and
+  is therefore `''`), are both accepted; only a genuinely *new*, different value has to be one of
+  the two options. Added to the diff/`changes` loop and to the revert-on-history-failure object the
+  same as every other editable field.
+
+**UI**: `components/ParkingTab.js` — `BookingFields` (shared by New Booking and Edit) gained a
+"Parking location *" chip pair, same visual pattern as the existing Duration chips (not a
+`<select>` — matches this file's own stated "a few taps" design philosophy for a 2-option field
+better than another dropdown). `AddBookingModal.valid()` now requires it. `BookingDetailModal`:
+`startEdit()` pre-fills it from the loaded booking; the view-mode field list gained a "Parking
+location: Not set" line (mirrors the existing "Project code: —" line added earlier today). Compact
+list row and the Booking Detail header area show it inline when set, nothing extra when blank
+(same "don't show a dangling placeholder for an unset optional-ish field" rule applied to Project
+Code earlier today). Excel export (`exportExcel`) gained a "Parking Location" column between
+Vehicle Reg and Status.
+
+**Filter**: new `locationFilter` state + a `<select>` in the shared filter row (All locations /
+Camden Council / Coram's Fields / Not set), sent as `location` on `/api/parking-list` →
+`getParkingBookings({..., location})` in `lib/db.js` → `eq('parking_location', location)`, or
+`eq('parking_location', '')` for the `NOT_SET` sentinel (safe because the column's `DEFAULT ''`
+means it's never `NULL`, confirmed against the schema change above — no `.is.null` OR needed).
+
+Files: `lib/config.js` (new `PARKING_LOCATION_OPTIONS` export), `lib/db.js` (mapper,
+`createParkingBooking`, `updateParkingBooking`'s map, `getParkingBookings`'s new `location` param),
+`pages/api/parking-save.js` (`handleCreate`/`handleUpdate`, `FIELD_LABELS`), `pages/api/parking-
+list.js` (passes `location` through), `components/ParkingTab.js` (`BookingFields`,
+`AddBookingModal`, `BookingDetailModal`, filter row, list row, Excel export), `supabase-schema.sql`,
+`DATABASE.md`.
+
+**Verified**: `npx next build` — clean, exit code 0. **Not tested against the live site or a real
+Supabase write** — same caveat as the Duty Manager change above: exercise the create (location
+required), edit (blank/kept-as-is allowed), and the four filter states (All/Camden Council/Coram's
+Fields/Not set) once the schema change is applied.
+
+**Committed and pushed to `main`** (branched first since `main` was checked out at the start of
+this piece of work, then fast-forwarded with no merge commit, per the pattern established earlier
+today).

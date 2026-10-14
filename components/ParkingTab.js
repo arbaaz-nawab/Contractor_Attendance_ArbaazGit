@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dashFetch } from '../lib/sessionClient';
-import { PARKING_DUTY_MANAGER_OPTION } from '../lib/config';
+import { PARKING_DUTY_MANAGER_OPTION, PARKING_LOCATION_OPTIONS } from '../lib/config';
 
 /**
  * Estates parking log — standalone, no link to contractor sign-ins.
@@ -153,6 +153,21 @@ function BookingFields({ f, setF, meta }) {
           placeholder="e.g. AB12 CDE" style={{ textTransform: 'uppercase' }}
         />
       </div>
+
+      <div className="form-group">
+        <label>Parking location *</label>
+        <div className="chip-group">
+          {PARKING_LOCATION_OPTIONS.map((loc) => (
+            <button
+              key={loc} type="button"
+              className={`chip ${f.parkingLocation === loc ? 'chip--selected' : ''}`}
+              onClick={() => set('parkingLocation', loc)}
+            >
+              {loc}
+            </button>
+          ))}
+        </div>
+      </div>
     </>
   );
 }
@@ -160,7 +175,7 @@ function BookingFields({ f, setF, meta }) {
 function AddBookingModal({ meta, onConfirm, onCancel, onManageStaff }) {
   const [f, setF] = useState({
     requester: '', projectCode: '', company: '', bookingDate: toDateStr(new Date()),
-    durationType: '', vehicleReg: '',
+    durationType: '', vehicleReg: '', parkingLocation: '',
   });
   const [enteredBy, setEnteredBy] = useState(() => {
     try { return localStorage.getItem(ENTERED_BY_KEY) || ''; } catch { return ''; }
@@ -173,7 +188,7 @@ function AddBookingModal({ meta, onConfirm, onCancel, onManageStaff }) {
 
   function valid() {
     return !!(f.requester.trim() && f.company.trim() && f.bookingDate
-      && f.durationType && f.vehicleReg.trim() && enteredBy.trim()
+      && f.durationType && f.vehicleReg.trim() && f.parkingLocation && enteredBy.trim()
       && (!isDutyManager || dutyManagerName.trim()));
   }
 
@@ -189,6 +204,7 @@ function AddBookingModal({ meta, onConfirm, onCancel, onManageStaff }) {
           action: 'create',
           requester: f.requester.trim(), projectCode: f.projectCode.trim(), company: f.company.trim(),
           bookingDate: f.bookingDate, durationType: f.durationType, vehicleReg: f.vehicleReg.trim(),
+          parkingLocation: f.parkingLocation,
           enteredBy: enteredBy.trim(),
           dutyManagerName: isDutyManager ? dutyManagerName.trim() : undefined,
         }),
@@ -295,6 +311,7 @@ function BookingDetailModal({ bookingId, meta, onClose, onChanged, onManageStaff
       requester: data.booking.requester, projectCode: data.booking.projectCode,
       company: data.booking.company, bookingDate: data.booking.bookingDate,
       durationType: data.booking.durationType, vehicleReg: data.booking.vehicleReg,
+      parkingLocation: data.booking.parkingLocation,
     });
     setEditChangedBy('');
     setActionError('');
@@ -405,6 +422,7 @@ function BookingDetailModal({ bookingId, meta, onClose, onChanged, onManageStaff
 
             <p className="text-sm mb-2"><strong>Requester:</strong> {data.booking.requester}</p>
             <p className="text-sm mb-2"><strong>Project code:</strong> {data.booking.projectCode || '—'}</p>
+            <p className="text-sm mb-2"><strong>Parking location:</strong> {data.booking.parkingLocation || 'Not set'}</p>
             <p className="text-sm mb-2"><strong>Booking date:</strong> {fmtDateLabel(data.booking.bookingDate)}</p>
             <p className="text-sm mb-2"><strong>Duration:</strong> {durationLabel(data.booking.durationType)}</p>
             <p className="text-sm mb-2"><strong>Vehicle reg:</strong> {data.booking.vehicleReg}</p>
@@ -547,8 +565,9 @@ export default function ParkingTab() {
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo]     = useState('');
   const [search, setSearch]     = useState('');
-  const [statusFilter, setStatusFilter]   = useState('');
-  const [companyFilter, setCompanyFilter] = useState('');
+  const [statusFilter, setStatusFilter]     = useState('');
+  const [companyFilter, setCompanyFilter]   = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
 
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -584,6 +603,7 @@ export default function ParkingTab() {
       if (search.trim())        params.set('search', search.trim());
       if (statusFilter)         params.set('status', statusFilter);
       if (companyFilter.trim()) params.set('company', companyFilter.trim());
+      if (locationFilter)       params.set('location', locationFilter);
       const res  = await dashFetch(`/api/parking-list?${params}`);
       const data = await res.json();
       if (data.success) setRecords(data.records);
@@ -593,7 +613,7 @@ export default function ParkingTab() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, search, statusFilter, companyFilter]);
+  }, [dateFrom, dateTo, search, statusFilter, companyFilter, locationFilter]);
 
   useEffect(() => { fetchMeta(); }, [fetchMeta]);
 
@@ -626,10 +646,10 @@ export default function ParkingTab() {
 
   function exportExcel() {
     import('xlsx').then((XLSX) => {
-      const header = ['Date', 'Duration', 'Company', 'Project Code', 'Requester', 'Vehicle Reg', 'Status', 'Entered By', 'Requested At', 'Booked At'];
+      const header = ['Date', 'Duration', 'Company', 'Project Code', 'Requester', 'Vehicle Reg', 'Parking Location', 'Status', 'Entered By', 'Requested At', 'Booked At'];
       const rows = records.map((r) => [
         r.bookingDate, durationLabel(r.durationType), r.company, r.projectCode, r.requester,
-        r.vehicleReg, r.status, r.bookedBy, r.requestedAt, r.bookedAt,
+        r.vehicleReg, r.parkingLocation, r.status, r.bookedBy, r.requestedAt, r.bookedAt,
       ].map(sanitizeCell));
       const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
       const wb = XLSX.utils.book_new();
@@ -690,6 +710,11 @@ export default function ParkingTab() {
         </select>
         <input type="text" placeholder="Filter by company…" value={companyFilter}
           onChange={(e) => setCompanyFilter(e.target.value)} />
+        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}>
+          <option value="">All locations</option>
+          {PARKING_LOCATION_OPTIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+          <option value="NOT_SET">Not set</option>
+        </select>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <label style={{ fontSize: '0.85rem', color: '#6b7280', whiteSpace: 'nowrap' }}>From</label>
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
@@ -715,7 +740,10 @@ export default function ParkingTab() {
               {r.company}
               {r.projectCode && <span className="text-muted text-sm"> — {r.projectCode}</span>}
             </div>
-            <div className="parking-row__sub">{r.requester} · {r.vehicleReg} · {durationLabel(r.durationType)}</div>
+            <div className="parking-row__sub">
+              {r.requester} · {r.vehicleReg} · {durationLabel(r.durationType)}
+              {r.parkingLocation && <> · {r.parkingLocation}</>}
+            </div>
           </div>
           <StatusBadge status={r.status} />
         </div>
