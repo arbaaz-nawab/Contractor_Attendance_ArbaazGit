@@ -65,7 +65,7 @@ One row per overtime session.
 | `notes` | `Notes` | optional, set at sign-in |
 | `adjusted_duration` | `Adjusted Duration` | manager-editable override of the computed `Xh Ym` duration, e.g. for rounding |
 | `approved_by_dean` / `approved_by_laurel` | `Approved By Dean` / `Approved By Laurel` | **legacy dual-approval columns**, added by an earlier migration; current single-approval logic (`overtime-approve.js`) never writes them — dead columns kept for old record compatibility |
-| `dean_approval_timestamp` / `laurel_approval_timestamp` | ditto | same — legacy, unused by current code |
+| `dean_approval_timestamp` / `laurel_approval_timestamp` | ditto | same — legacy, unused by current code. **Deliberately not renamed to Graeme**: they hold Dean Marsh's historical approvals (audit trail); Graeme Semple, his successor, uses the normal single-approval `approved_by` column |
 
 ### `managers`
 Source of truth for manager identity, PIN, and email.

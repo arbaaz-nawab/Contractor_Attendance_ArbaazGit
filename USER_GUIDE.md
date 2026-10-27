@@ -144,7 +144,8 @@ is **not** pulled from the separate Weekly Rota tab, since the two serve differe
 
 ### Overtime — Approvals
 
-Each engineer has one line manager who approves their overtime (Sarfraz Arfan can additionally
+Each engineer has one line manager who approves their overtime (Chris Vasta or Graeme Semple,
+Head of Estates; Sarfraz Arfan can additionally
 approve anyone, as a senior override — useful when the usual approver is away). Pick your name at
 the top of the Approvals tab to see only your own team's pending requests; approve or reject with
 your personal PIN. One approval is enough.

@@ -1786,3 +1786,50 @@ Fields/Not set) once the schema change is applied.
 **Committed and pushed to `main`** (branched first since `main` was checked out at the start of
 this piece of work, then fast-forwarded with no merge commit, per the pattern established earlier
 today).
+
+## 2026-10-15 — Parking release guide + email
+
+- Produced `release-guide-2026-10-15/` (outside the app repo tree): `guide.html`, `guide.css`,
+  `Parking-Update-Guide.pdf` (1 page A4, rendered with Playwright/chromium-1243, checked visually, no
+  overflow), `email.txt` (under 150 words, for estates staff + engineers). Screenshots in `images/` were
+  already there. Wording based on `components/ParkingTab.js` behaviour.
+- DEMOGUIDE rows were seeded in the live DB for screenshots and then removed: 4 bookings (ids 18-21) and
+  4 history rows; verified zero remain.
+- **Action needed:** the Supabase service-role key was shared in chat during this work — rotate it
+  (Supabase dashboard, then update the Vercel/.env value). It is not stored in any file.
+- No app source, schema, config, commit or deploy changes.
+
+## 2026-10-16 — Release guide: legible location-filter screenshot
+
+- In `release-guide-2026-10-15/` (outside the app repo): added `images/location-filter-crop.png` (filter row only, 718x50 crop of `location-filter.png`; original kept). `guide.html` section 3 now shows it full content width as a figure under the text; `guide.css` got `.feature.loc` / `.wide` rules. `Parking-Update-Guide.pdf` re-rendered (Playwright/chromium, no Python/poppler on this machine) — now 2 pages.
+- Visual check was an A4-content-width print-media screenshot of the HTML, not a rasterised PDF (no pdftoppm available); page count read from the PDF itself. The date boxes and result rows were cropped out to keep text large.
+- No app source, DB, or live-site changes.
+
+## 2026-10-26 — Graeme Semple (Head of Estates) replaces Dean Marsh
+
+- `lib/config.js`: Dean's original six engineers moved from `TEAMS['Sarfraz Arfan']` to new
+  `TEAMS['Graeme Semple']`; `'Graeme Semple'` added to `MANAGERS`; comments updated.
+  `OVERRIDE_APPROVER` unchanged (Sarfraz). `APPROVERS` still = Chris, Graeme, Sarfraz (Sarfraz now comes
+  from the explicit `OVERRIDE_APPROVER` term since he has no team). Dashboard override banner derives names
+  from `TEAMS`, so it now reads "Chris Vasta or Graeme Semple" automatically.
+- **Rights are not per-name gated anywhere.** Rota, compliance, amend/delete and approve routes all just
+  check `getManagerPin(name)`; modals/dropdowns read the `managers` table. So "same rights as Dean" =
+  a `managers` row + a `TEAMS` key — no code branch to add (no hardcoded name to replace). Override
+  approval stays exclusive to `OVERRIDE_APPROVER`.
+- **Legacy columns NOT renamed** (`approved_by_dean`, `dean_approval_timestamp`, `Approved By Dean` labels,
+  dashboard "Dean:" line): they are Dean's real historical approvals; relabelling them Graeme would falsify
+  the audit trail, and a column rename adds deploy-order risk for dead data. Comment added in `lib/db.js`,
+  note in `DATABASE.md`. `lib/excel.js` untouched (dead code).
+- Docs updated: `CONFIG_AND_ENV.md`, `DATABASE.md`, `USER_GUIDE.md`.
+- Not touched: email.js, overdue alert recipients, cron, forms, `SignInForm.js` CONTACTS, R2, ukTime, styling.
+- Findings: `.env.local` `MANAGER_PINS` still lists Dean Marsh (local, gitignored; DB takes priority) —
+  left for the owner. `getManagerPin` falls back to `APPROVAL_PIN` for any name, so Graeme can act with that
+  universal PIN even before his row exists. **No change-PIN flow exists** for managers (PINs are plaintext
+  in `managers.manager_pin`, edited in Supabase by hand) — gap reported, not built.
+- Rejected: data-driven "rights" table/flags — nothing in the code gates rights by name, so it would add
+  machinery with nothing to drive.
+
+## 2026-10-27 — Graeme missing from dropdowns
+- Cause: the 2026-10-26 config change was uncommitted/undeployed, so the live site had no Graeme in `TEAMS`/`APPROVERS`.
+- Also added `'Graeme Semple'` to `SignInForm.js` `CONTACTS` (point of contact; user explicitly requested) and `PLANNED_WORKS_MANAGERS` in `lib/config.js` (Planned Works tracker/selectors).
+- Parking "Entered by" list comes from the `parking_staff` table, not code — add via the Parking tab staff control or SQL.

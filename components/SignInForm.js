@@ -12,6 +12,7 @@ const BUILDINGS = [
 const CONTACTS = [
   'Arbaaz Nawab',
   'Chris Vasta',
+  'Graeme Semple',
   'Sarfraz Arfan',
   'Other',
 ];

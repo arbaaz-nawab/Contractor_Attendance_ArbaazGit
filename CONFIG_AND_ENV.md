@@ -47,8 +47,8 @@ Not sensitive, but centralizes several judgment calls that would otherwise need 
 - `TEAMS` — `{ managerName: [engineerNames] }`, defines who approves whose overtime.
 - `OVERRIDE_APPROVER` — single name who can approve/reject any engineer's overtime regardless of
   team, and is the sole approver for anyone not listed in `TEAMS`.
-- `APPROVERS` — deduped union of `TEAMS` keys and `OVERRIDE_APPROVER`, used to populate the
-  Approvals-tab manager dropdown.
+- `APPROVERS` — deduped union of `TEAMS` keys (Chris Vasta, Graeme Semple) and `OVERRIDE_APPROVER`
+  (Sarfraz Arfan, who has no team), used to populate the Approvals-tab manager dropdown.
 - `getLineManager()`, `canApprove()`, `UNASSIGNED_ENGINEERS` — derived helpers/values.
 - `WEEK_START_DAY` — hardcoded `1` (Monday); no runtime toggle exists (see BACKLOG B16).
 - `MANAGERS` — separate flat list used only as a fallback default for dashboard modal manager
