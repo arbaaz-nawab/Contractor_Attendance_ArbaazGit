@@ -55,7 +55,7 @@ destructive or security-probing.
    *your own* PIN (or vice versa) for an engineer not on that manager's team. **Expected**: `403`
    from `overtime-approve.js`'s `canApprove()` check — confirms server-side enforcement isn't just
    cosmetic UI filtering.
-3. As `OVERRIDE_APPROVER` (Sarfraz Arfan), approve an engineer outside your own team. **Expected**:
+3. As an override approver (Sarfraz Arfan or Margarita Miller), approve an engineer outside your own team. **Expected**:
    succeeds, `Approved By` recorded as `"Sarfraz Arfan (Override)"`.
 4. Attempt to approve/reject/edit directly via `POST /api/overtime-approve` with a `managerName`
    that has no PIN configured anywhere (not in `managers` table, not in `MANAGER_PINS`) and no

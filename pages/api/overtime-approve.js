@@ -4,7 +4,7 @@
  * Team-based single-approval workflow:
  *   • Each engineer has one line manager (lib/config.js -> TEAMS).
  *   • Only that line manager may approve/reject their overtime.
- *   • OVERRIDE_APPROVER (Sarfraz Arfan) may approve/reject any engineer.
+ *   • OVERRIDE_APPROVERS (Sarfraz Arfan, Margarita Miller) may approve/reject any engineer.
  *   • One approval is enough: PENDING -> FULLY APPROVED.
  *
  * Legacy PARTIALLY APPROVED records (from the old dual-approval scheme) can
@@ -22,7 +22,7 @@
  */
 import { updateOvertimeRow, getAllOvertimeRows, getManagerPin } from '../../lib/db';
 import { ukDateTimeString } from '../../lib/ukTime';
-import { canApprove, getLineManager, OVERRIDE_APPROVER } from '../../lib/config';
+import { canApprove, getLineManager, isOverrideApprover, OVERRIDE_APPROVERS } from '../../lib/config';
 import { requireSession } from '../../lib/session';
 
 async function handler(req, res) {
@@ -89,12 +89,12 @@ async function handler(req, res) {
       return res.status(403).json({
         success: false,
         message: lineManager
-          ? `${engineerName} is on ${lineManager}'s team. Only ${lineManager} or ${OVERRIDE_APPROVER} can action this record.`
-          : `${engineerName} is not assigned to a team. Only ${OVERRIDE_APPROVER} can action this record.`,
+          ? `${engineerName} is on ${lineManager}'s team. Only ${lineManager} or ${OVERRIDE_APPROVERS.join(' / ')} can action this record.`
+          : `${engineerName} is not assigned to a team. Only ${OVERRIDE_APPROVERS.join(' / ')} can action this record.`,
       });
     }
 
-    const isOverride = managerName === OVERRIDE_APPROVER;
+    const isOverride = isOverrideApprover(managerName);
     const now        = ukDateTimeString();
     const signature  = isOverride ? `${managerName} (Override)` : managerName;
 

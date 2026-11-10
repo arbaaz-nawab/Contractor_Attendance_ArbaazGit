@@ -1833,3 +1833,13 @@ today).
 - Cause: the 2026-10-26 config change was uncommitted/undeployed, so the live site had no Graeme in `TEAMS`/`APPROVERS`.
 - Also added `'Graeme Semple'` to `SignInForm.js` `CONTACTS` (point of contact; user explicitly requested) and `PLANNED_WORKS_MANAGERS` in `lib/config.js` (Planned Works tracker/selectors).
 - Parking "Entered by" list comes from the `parking_staff` table, not code — add via the Parking tab staff control or SQL.
+
+## 2026-11-10 — Margarita Miller added as manager + second override approver
+- **What**: `lib/config.js` now has `OVERRIDE_APPROVERS = ['Sarfraz Arfan','Margarita Miller']` + `isOverrideApprover(name)`; `OVERRIDE_APPROVER` kept as alias of the first. `canApprove()`, `APPROVERS`, `overtime-approve.js` (403 text + "(Override)" signature) and dashboard `isOverrideManager` / banner text use it. Margarita added to `MANAGERS` and `SignInForm.js` `CONTACTS` (she was already in `PLANNED_WORKS_MANAGERS`). Not in `ENGINEERS`/`TEAMS`. Sarfraz's behaviour unchanged.
+- **Dropdowns**: all dashboard manager selects read `managersList` (from `/api/managers` = Supabase `managers` table, falling back to `MANAGERS`) — so she appears in amend/delete/rota/compliance/attendance selects only once her DB row exists (SQL given to user, not run). Approvals-tab dropdown uses `APPROVERS` (code).
+- **DB check (read-only)**: `managers` has id/manager_name/manager_pin/email; PINs are plain 4-char text (not hashed). Rows: Arbaaz, Graeme, Sarfraz, Chris — no Laurel row (id 3 is absent). Nothing to deactivate.
+- **Laurel**: only legacy `approved_by_laurel`/`laurel_approval_timestamp` columns and dashboard "Laurel:" label for old records — left untouched (audit trail). No live Laurel rights found in code.
+- **Rights audit**: no hardcoded name list gates amend/delete/rota/compliance/shift-correct; they only check a PIN via `getManagerPin()`. Only overtime approval is name-gated (`canApprove`).
+- **Docs**: USER_GUIDE, BUSINESS_RULES, CONFIG_AND_ENV, TESTING updated. README/PROJECT_EXPLANATION list no names — unchanged.
+- **Rejected**: deriving all lists from one shared constant (SignInForm is a client component with its own `CONTACTS` incl. "Other"; MANAGERS is only a fallback) — kept small, two-name array only.
+- Files: lib/config.js, components/SignInForm.js, pages/api/overtime-approve.js, pages/dashboard.js, docs above.

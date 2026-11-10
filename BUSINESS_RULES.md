@@ -74,19 +74,20 @@ Two independent expiry systems exist and are merged at lookup time
   one line manager's team, defined in `lib/config.js` `TEAMS`
   ([lib/config.js:29-46](lib/config.js#L29-L46)).
 - `canApprove(managerName, engineerName)` ([lib/config.js:69-73](lib/config.js#L69-L73)): true if
-  `managerName === OVERRIDE_APPROVER` (currently **Sarfraz Arfan**), or if `managerName` is that
+  `isOverrideApprover(managerName)` (`OVERRIDE_APPROVERS`, currently **Sarfraz Arfan** and
+  **Margarita Miller**), or if `managerName` is that
   engineer's assigned line manager. No one else can approve/reject that engineer's overtime — a
   request from a non-matching manager is rejected `403` server-side in
   [overtime-approve.js:86-94](pages/api/overtime-approve.js#L86-L94), even though the dashboard
   also filters the visible list client-side.
 - An engineer not present in any `TEAMS` array (`UNASSIGNED_ENGINEERS`,
-  [lib/config.js:76](lib/config.js#L76)) can **only** be approved by `OVERRIDE_APPROVER`. Adding a
+  [lib/config.js:76](lib/config.js#L76)) can **only** be approved by an `OVERRIDE_APPROVERS` member. Adding a
   new name to `ENGINEERS` without also adding them to a team silently creates this state.
 - One approval is sufficient: `PENDING`/`PARTIALLY APPROVED` → `FULLY APPROVED` in one call. The
   `'PARTIALLY APPROVED'` status value is kept only so legacy dual-approval-era records can still
   be progressed to `FULLY APPROVED` by the responsible manager — new records never enter that
   state under current code.
-- When `OVERRIDE_APPROVER` approves someone outside their own team, the `Approved By` value is
+- When an override approver approves someone outside their own team, the `Approved By` value is
   suffixed `" (Override)"` ([overtime-approve.js:96-98](pages/api/overtime-approve.js#L96-L98)) so
   it's visible in exports/dashboard that this wasn't the normal line-manager approval.
 - `adjustedDuration` lets a manager override the computed `Xh Ym` figure at approval time or via a

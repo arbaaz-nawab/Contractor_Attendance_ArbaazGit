@@ -13,6 +13,7 @@ const CONTACTS = [
   'Arbaaz Nawab',
   'Chris Vasta',
   'Graeme Semple',
+  'Margarita Miller',
   'Sarfraz Arfan',
   'Other',
 ];

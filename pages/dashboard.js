@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from '../components/Layout';
 import Link from 'next/link';
-import { MANAGERS, APPROVERS, ENGINEERS, WEEK_START_DAY, TEAMS, OVERRIDE_APPROVER, getLineManager, canApprove } from '../lib/config';
+import { MANAGERS, APPROVERS, ENGINEERS, WEEK_START_DAY, TEAMS, isOverrideApprover, getLineManager, canApprove } from '../lib/config';
 import * as XLSX from 'xlsx';
 import AttendanceTab from '../components/AttendanceTab';
 import ParkingTab from '../components/ParkingTab';
@@ -1305,7 +1305,7 @@ export default function Dashboard() {
   const overdueContractors = (isPast6PM && data) ? data.active : [];
 
   // ── Derived: approvals (team-based — each manager sees only their own team) ──
-  const isOverrideManager = currentManager === OVERRIDE_APPROVER;
+  const isOverrideManager = isOverrideApprover(currentManager);
 
   const pendingForManager = (overtimeData || []).filter((r) => {
     if (!currentManager) return false;
@@ -2058,7 +2058,7 @@ export default function Dashboard() {
                 </p>
                 <p className="text-sm text-muted" style={{ marginBottom: 8 }}>
                   {isOverrideManager
-                    ? `You are the override approver — you can approve overtime for any engineer, including on behalf of ${Object.keys(TEAMS).filter((m) => m !== OVERRIDE_APPROVER).join(' or ')}.`
+                    ? `You are the override approver — you can approve overtime for any engineer, including on behalf of ${Object.keys(TEAMS).filter((m) => m !== currentManager).join(' or ')}.`
                     : `Showing only engineers on your team (${(TEAMS[currentManager] || []).length}). One approval marks the record FULLY APPROVED.`}
                 </p>
 
