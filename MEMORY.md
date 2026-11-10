@@ -1843,3 +1843,12 @@ today).
 - **Docs**: USER_GUIDE, BUSINESS_RULES, CONFIG_AND_ENV, TESTING updated. README/PROJECT_EXPLANATION list no names — unchanged.
 - **Rejected**: deriving all lists from one shared constant (SignInForm is a client component with its own `CONTACTS` incl. "Other"; MANAGERS is only a fallback) — kept small, two-name array only.
 - Files: lib/config.js, components/SignInForm.js, pages/api/overtime-approve.js, pages/dashboard.js, docs above.
+
+## 2026-11-10 — Overtime tab: newest-first default + sort control
+- **What**: Engineer Overtime Records table now sorted by `startTimestamp`, newest first by default, with a "Sort" select (Newest first / Oldest first) above the table. Client-side only.
+- **How**: `sortedOvertime` = `useMemo` over `[overtimeData, overtimeSort]` in `pages/dashboard.js` (declared with the other overtime state, above the early return — hook order). Sorts a mapped copy; `overtimeData` is never mutated. Missing/invalid timestamps (`new Date()` → NaN) go last in both directions; ties break on `_row`. Active sessions sort by start like any other.
+- **Why memo**: the 60s auto-refresh calls `setOvertimeData` with new records; memo re-derives from the current sort choice, so the order is stable and doesn't reset.
+- **Persistence**: choice kept in `overtimeSort` state and stored in `sessionStorage` (`OT_SORT_KEY`, try/catch, restored in the same mount effect as the unlock key). Only `'oldest'` is restored; anything else = default.
+- **Row actions**: Amend/Delete pass the row object into `setAmendOvertimeModal(row)`, and the modal sends `record._row` — no array-index use. Row `key` changed from index to `row._row` so React doesn't reuse rows wrongly when order flips.
+- **Untouched**: `lib/db.js`, API (still id-ascending), Approvals/Monthly Summary/other tabs, Excel export order.
+- Files: pages/dashboard.js. Verified by SWC parse only; no UI run (no test suite) — see TESTING.md style manual check: flip the select, Amend a row in each order.

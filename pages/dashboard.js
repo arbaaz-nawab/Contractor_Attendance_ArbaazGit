@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Layout from '../components/Layout';
 import Link from 'next/link';
 import { MANAGERS, APPROVERS, ENGINEERS, WEEK_START_DAY, TEAMS, isOverrideApprover, getLineManager, canApprove } from '../lib/config';
@@ -1071,6 +1071,9 @@ function ApprovalModal({ target, action, managerName, onConfirm, onCancel }) {
 // is scoped to the tab and wiped when the tab closes. No PIN is ever stored.
 const DASH_UNLOCK_KEY = 'gc_dashboard_unlocked';
 
+// Overtime tab sort order ('newest' | 'oldest'), remembered for the tab session only.
+const OT_SORT_KEY = 'gc_overtime_sort';
+
 // ── Main dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const today = localDateStr(new Date());
@@ -1105,6 +1108,22 @@ export default function Dashboard() {
   const [overtimeData,    setOvertimeData]    = useState(null);
   const [overtimeLoading, setOvertimeLoading] = useState(false);
   const [overtimeError,   setOvertimeError]   = useState(null);
+  const [overtimeSort,    setOvertimeSort]    = useState('newest');
+
+  // Sorted copy for display (never mutates overtimeData). Missing/invalid start times
+  // sink to the bottom in both directions; ties fall back to record id.
+  const sortedOvertime = useMemo(() => {
+    if (!overtimeData) return null;
+    const dir = overtimeSort === 'oldest' ? 1 : -1;
+    const ts  = (r) => { const t = new Date(r.startTimestamp).getTime(); return isNaN(t) ? null : t; };
+    return overtimeData
+      .map((r) => ({ r, t: ts(r) }))
+      .sort((a, b) => {
+        if (a.t === null || b.t === null) return (a.t === null) - (b.t === null);
+        return (a.t - b.t || a.r._row - b.r._row) * dir;
+      })
+      .map((x) => x.r);
+  }, [overtimeData, overtimeSort]);
 
   // Approvals tab
   const [currentManager,  setCurrentManager]  = useState('');
@@ -1241,6 +1260,7 @@ export default function Dashboard() {
   useEffect(() => {
     try {
       if (sessionStorage.getItem(DASH_UNLOCK_KEY) === 'true') setUnlocked(true);
+      if (sessionStorage.getItem(OT_SORT_KEY) === 'oldest') setOvertimeSort('oldest');
     } catch { /* sessionStorage blocked (private mode) — fall back to PIN gate */ }
     setAuthChecked(true);
   }, []);
@@ -1965,6 +1985,18 @@ export default function Dashboard() {
               <p className="text-muted text-sm">No overtime records found.</p>
             )}
             {overtimeData && overtimeData.length > 0 && (
+              <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <label className="text-sm text-muted" htmlFor="ot-sort">Sort</label>
+                <select id="ot-sort" value={overtimeSort}
+                  onChange={(e) => {
+                    setOvertimeSort(e.target.value);
+                    try { sessionStorage.setItem(OT_SORT_KEY, e.target.value); } catch { /* ignore */ }
+                  }}>
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                </select>
+              </div>
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -1975,8 +2007,8 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {overtimeData.map((row, i) => (
-                      <tr key={i}>
+                    {sortedOvertime.map((row) => (
+                      <tr key={row._row}>
                         <td><strong>{row.engineerName}</strong></td>
                         <td>{fmtDate(row.startTimestamp)}</td>
                         <td>{fmtDay(row.startTimestamp)}</td>
@@ -2032,6 +2064,7 @@ export default function Dashboard() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
         </>
